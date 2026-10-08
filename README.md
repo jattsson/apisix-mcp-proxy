@@ -1,41 +1,39 @@
 # APISIX MCP Proxy
 
-A normal Lua plugin named `mcp-proxy` that exposes multiple Streamable HTTP MCP
-servers through a single authenticated endpoint. Tools, prompts, resources and
-resource templates are aggregated without a catalog cache or automatic retries.
-Business logic and authorization of individual use cases remain in the services.
+Expose the MCP interfaces of multiple microservices through one authenticated
+endpoint in Apache APISIX. Clients can discover and use tools, prompts and
+resources across your services through a single MCP connection.
 
-**Verification status (2026-10-08):** the pre-publication implementation passed 34 local
-integration tests and was verified in a production deployment. The user confirmed
-successful `get_profile` and `list_my_companies` calls through the real ChatGPT
-connection. Deployment tests also covered OAuth PKCE/S256, refresh and audience
-isolation. ChatGPT-specific reconnection/token renewal, voice support, and Claude
-or Codex client compatibility remain **NOT VERIFIED**. See the
-[verification report](docs/verification.md) for evidence sources and exact scope.
+Each service keeps its own MCP implementation, business logic and authorization.
+The plugin combines their catalogs and routes each request to the service that
+owns the requested tool, prompt or resource. APISIX handles authentication,
+upstream routing, load balancing and TLS.
 
-## Architecture
+Use it when your services already expose MCP interfaces and you want to make
+them available through the same gateway as your REST APIs. REST and MCP routes
+can share an identity provider and realm, with audiences and permissions
+configured for each interface.
 
-The plugin is implemented entirely in Lua and runs inside APISIX, using the
-libraries supplied by APISIX/OpenResty. Installation copies only Lua files. Java
-and Python in this repository are test infrastructure, not runtime dependencies
-of the plugin.
+## How it works
 
 ![Architecture: REST and MCP clients share one APISIX gateway and identity realm. Each microservice exposes REST and MCP over its own business logic.](docs/images/architecture.svg)
 
-REST clients use ordinary APISIX routes. MCP clients use one public MCP endpoint:
-list requests aggregate the participating services, and an operation is delegated
-to its owning service. Each microservice exposes both interfaces over its own
-business logic. The service names above are illustrative; the plugin does not
-create REST interfaces or generate MCP tools from REST APIs.
+1. An MCP client connects to the gateway and authenticates through the configured
+   APISIX authentication plugin.
+2. Catalog requests collect tools, prompts, resources and resource templates from
+   the configured services using the caller's bearer token.
+3. The plugin combines the results, applies configured aliases and hiding rules,
+   and returns one catalog to the client.
+4. Tool calls and other operations go to the service that owns them. Responses
+   and streaming progress are returned to the client.
 
-Both route families can trust the same realm/issuer and use APISIX's existing
-`openid-connect` plugin. Clients may have different OAuth registrations, audiences
-and scopes. A shared realm does **not** imply that a REST access token is valid for
-the MCP endpoint. For MCP, the gateway and participating services must accept the
-intended logical MCP resource audience: the plugin forwards the caller's bearer
-token unchanged and performs no token exchange. Services retain tenant and
-use-case authorization. Dotted arrows show trust configuration, not a mandatory
-identity-provider call for every request.
+Services continue to enforce their own tenant and operation permissions. REST
+traffic uses its existing APISIX routes. The plugin works with existing MCP
+servers; it does not generate MCP tools from REST APIs.
+
+The plugin runs entirely in Lua inside APISIX. It supports stateless MCP
+2025-11-25 over Streamable HTTP, including streamed POST responses. Installation
+adds Lua files to APISIX; no separate proxy process is required.
 
 ## Contents
 
@@ -50,23 +48,17 @@ identity-provider call for every request.
 
 ## Versions and protocol profile
 
-| Component | Pinned/observed version | Evidence |
-|---|---|---|
-| Apache APISIX | 3.19.0-debian | Official release, Docker integration tests |
-| APISIX image | `sha256:9a7e45dc943fbf10ec916d1232bae4cda9302ae28a4696cfb83c2da01d261141` | Docker RepoDigest |
-| Client-facing MCP | 2025-11-25, stateless Streamable HTTP | Automated HTTP harness |
-| Upstream MCP | 2025-11-25, stateless Streamable HTTP | Two real Java SDK transport fixtures |
-| Java MCP SDK | 2.0.1 | Fixture dependencies and committed Gradle lock |
-| Java fixture runtime | JDK 25, Gradle 9.7.1, Tomcat 11.0.24 | Pinned build image and dependencies |
+The supported runtime is **Apache APISIX 3.19.0** with APISIX-Runtime
+extensions. Both client-facing and upstream MCP connections use the
+**2025-11-25 stateless Streamable HTTP** profile. See the
+[verification report](docs/verification.md) for the tested images and fixtures.
 
-SDK 2.0.1's `McpStatelessServerTransport` lists MCP 2025-03-26, 2025-06-18 and
-2025-11-25. This plugin intentionally implements only 2025-11-25. It uses
-`initialize` and `notifications/initialized`, not a speculative `server/discover`
-translation. An authenticated, structurally valid `server/discover` request
+Connections use `initialize` followed by `notifications/initialized`.
+An authenticated, structurally valid `server/discover` request
 receives HTTP 404 with JSON-RPC `-32601`, including probes carrying
 `MCP-Protocol-Version: 2026-07-28` or no version header, so clients can fall back
-to `initialize`. This negative response does not advertise or implement the
-newer protocol. Origin, body, JSON-RPC and public authentication/IP checks still
+to `initialize`. This allows fallback without advertising support for a newer
+protocol. Origin, body, JSON-RPC and public authentication/IP checks still
 apply. Other methods retain strict version checking.
 A client proposing another revision in `initialize` receives 2025-11-25 and must
 disconnect if it does not support that revision. Subsequent requests must carry
@@ -82,7 +74,7 @@ designed and verified session strategy before it can use this plugin.
 
 ## Install
 
-This follows APISIX's [custom Lua plugin loading model](https://apisix.apache.org/docs/apisix/plugin-develop/):
+Installation follows APISIX's [custom Lua plugin loading model](https://apisix.apache.org/docs/apisix/plugin-develop/):
 files under `apisix/plugins`, an `extra_lua_path`, and an entry in `plugins`.
 The repository layout also follows the [API7 Lua plugin template](https://github.com/api7/apisix-plugin-template).
 This is an independently maintained plugin, not an Apache-distributed plugin.
@@ -121,10 +113,9 @@ three plugin modes are part of the same installed plugin:
 
 The bridge is necessary to reuse APISIX's **actual** upstream selection, DNS,
 balancer, active/passive health handling, Host/SNI, TLS verification and client
-certificate resolution for every fan-out request. It is not a dummy MCP backend.
+certificate resolution for every fan-out request. It selects the configured upstream for each delegated request.
 The plugin calls it using nonblocking OpenResty HTTP I/O; the bridge installs
-`ctx.upstream_id` and APISIX executes its normal upstream pipeline. No first-node
-selection or independent TLS implementation is used. The bridge port must be an
+`ctx.upstream_id` and APISIX executes its normal upstream pipeline. Upstream selection and TLS use APISIX's native implementation. The bridge port must be an
 HTTP listener on the same APISIX instance; never point it at a load balancer.
 
 Set the bridge route's `host` to `mcp-proxy.internal.invalid` and `priority` to
@@ -148,7 +139,7 @@ Keep existing deployment-specific workarounds until the new revision is verified
 in that environment; remove redundant discovery fallback hooks only afterwards.
 
 Keep only `mcp-proxy` on the bridge route. Public route auth and IP policies run
-before aggregation and are not reapplied as if loopback were a new end user.
+before aggregation; internal fan-out uses the resulting authenticated context.
 Global auth/IP policies must exclude the reserved bridge path and public metadata
 paths. The ticket gate remains mandatory. Do not configure public rewrites onto
 the reserved path. Protect Admin API and host access as usual.
@@ -340,7 +331,8 @@ initialization, pagination and user operations have no automatic retry.
 
 HTTP auth errors remain 401/403 with challenges; throttling remains 429 with
 Retry-After. Transport/invalid upstream responses and aggregate collisions use
-502; total/read timeouts use 504; capacity/config changes use 503. Client parse,
+502; total/read timeouts use 504; capacity/config changes use 503.
+The `server/discover` compatibility probe returns 404 / -32601. Other client parse,
 method and parameter errors use 400 with JSON-RPC codes -32700, -32600, -32601 or
 -32602. Gateway JSON-RPC errors use -32002. Upstream operation JSON-RPC errors and
 successful tool results with `isError` are passed through distinctly. Gateway
@@ -349,16 +341,27 @@ has committed HTTP 200, a subsequent transport failure is a correlated SSE error
 
 No subscriptions/listChanged, elicitation, sampling, roots, task execution,
 completion/complete, legacy HTTP+SSE or stdio are advertised. A catalog tool that
-requires tasks fails compatibility diagnosis rather than being falsely advertised.
-Client notifications are acknowledged without inventing persistent sessions.
+requires tasks fails compatibility diagnosis during discovery.
+Client notifications are acknowledged; the gateway keeps no persistent MCP sessions.
 
 ## Test and development
+
+The automated suite covers 34 integration tests and 19 Lua helper assertions.
+Deployment testing also covers OAuth PKCE/S256, refresh and audience isolation.
+Two tool calls have been confirmed through a real ChatGPT connection.
+
+ChatGPT reconnection, automatic token renewal and voice support have not been
+verified, nor have Claude and Codex clients. The
+[verification report](docs/verification.md) separates automated results,
+deployment evidence and user-confirmed behavior.
+
+Java and Python are used only by the test fixtures and build tooling. They are
+not runtime dependencies of the plugin.
 
 Lua source follows the [coding and function-documentation policy](docs/lua-style.md).
 Run `bash scripts/style.sh` before submitting changes; use
 `bash scripts/style.sh --write` to apply formatting. CI checks formatting,
 function contracts and Luacheck warnings separately from integration tests.
-
 
 Requirements: Docker with Compose, Python 3 and OpenSSL. Run from Linux/WSL:
 
@@ -378,7 +381,7 @@ The Java fixtures use the real SDK's `HttpServletStatelessServerTransport`; the
 Python adversary supplies deliberately malformed, delayed, fragmented and lost
 responses. OpenResty unit output is checked with Python's independent JSON parser.
 See [docs/verification.md](docs/verification.md) for the executed matrix and
-external gates. The original Swedish specification is retained in `docs/`.
+remaining limitations. The original Swedish specification is retained in `docs/`.
 
 Source references: [APISIX releases](https://apisix.apache.org/downloads/),
 [APISIX 3.19 source](https://github.com/apache/apisix/tree/3.19.0),
