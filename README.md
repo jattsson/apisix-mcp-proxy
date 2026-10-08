@@ -38,6 +38,7 @@ adds Lua files to APISIX; no separate proxy process is required.
 ## Contents
 
 - [Installation](#install)
+- [Petstore example](#example-petstore-microservices)
 - [Configuration reference](#configuration-reference)
 - [Authentication and public identity](#authentication-and-public-identity)
 - [Versions and protocol profile](#versions-and-protocol-profile)
@@ -193,6 +194,163 @@ Upstream or SSL objects if no other routes use them.
 | Authentication denied | Check issuer, expiry, intended audience and scopes; membership of the same realm alone is insufficient. |
 | Bridge/discovery failure | Check same-instance listener/path, shared dictionary, native Upstream/TLS settings and global-policy exclusions described above. |
 | SSE arrives in a batch | Disable proxy buffering in APISIX and any ingress/reverse proxy in front of it. |
+
+## Example: Petstore microservices
+
+Suppose a pet store has three services. Each exposes a REST API for applications
+and a stateless MCP endpoint for AI clients:
+
+| Service | Public REST paths | Internal MCP endpoint | Public MCP tool alias |
+|---|---|---|---|
+| Pets | /api/pets and /api/pets/* | http://pets:8080/mcp | search_pets |
+| Orders | /api/orders and /api/orders/* | http://orders:8080/mcp | search_orders |
+| Customers | /api/customers and /api/customers/* | http://customers:8080/mcp | search_customers |
+
+Applications use the REST routes. AI clients connect to
+https://petstore.example.test/mcp and discover the combined catalogs. In this
+example each service exposes a tool named `search`; aliases give those tools
+unique names at the gateway. Other tool and prompt names must also be unique
+within their respective catalogs; use aliases or hiding rules to resolve clashes.
+Resource URIs and template patterns must have a single owner across services;
+conflicting resources can be hidden but cannot be renamed by the plugin.
+
+The following [standalone configuration](examples/petstore.yaml) defines the
+three upstreams, REST routes, aggregated MCP route, public OAuth metadata and
+internal bridge. YAML anchors reuse the OIDC settings and metadata.
+
+```yaml
+# Standalone APISIX route configuration (apisix.yaml).
+upstreams:
+  - id: pets
+    type: roundrobin
+    nodes: {"pets:8080": 1}
+  - id: orders
+    type: roundrobin
+    nodes: {"orders:8080": 1}
+  - id: customers
+    type: roundrobin
+    nodes: {"customers:8080": 1}
+
+routes:
+  - id: pets-rest
+    host: petstore.example.test
+    uris: [/api/pets, /api/pets/*]
+    upstream_id: pets
+    plugins:
+      openid-connect: &rest_auth
+        discovery: https://auth.example.test/realms/petstore/.well-known/openid-configuration
+        client_id: petstore-rest
+        bearer_only: true
+        use_jwks: true
+        claim_validator:
+          issuer:
+            valid_issuers: [https://auth.example.test/realms/petstore]
+          audience:
+            required: true
+            match_with_client_id: true
+        set_access_token_header: false
+        set_id_token_header: false
+        set_userinfo_header: false
+
+  - id: orders-rest
+    host: petstore.example.test
+    uris: [/api/orders, /api/orders/*]
+    upstream_id: orders
+    plugins:
+      openid-connect: *rest_auth
+
+  - id: customers-rest
+    host: petstore.example.test
+    uris: [/api/customers, /api/customers/*]
+    upstream_id: customers
+    plugins:
+      openid-connect: *rest_auth
+
+  - id: petstore-mcp
+    host: petstore.example.test
+    uri: /mcp
+    plugins:
+      openid-connect:
+        discovery: https://auth.example.test/realms/petstore/.well-known/openid-configuration
+        client_id: https://petstore.example.test/mcp
+        bearer_only: true
+        use_jwks: true
+        claim_validator:
+          issuer:
+            valid_issuers: [https://auth.example.test/realms/petstore]
+          audience:
+            required: true
+            match_with_client_id: true
+        set_access_token_header: false
+        set_id_token_header: false
+        set_userinfo_header: false
+      mcp-proxy:
+        server_info: {name: petstore, version: "1.0.0"}
+        instructions: Search pets, check orders and find customer information.
+        auth_metadata: &mcp_metadata
+          resource: https://petstore.example.test/mcp
+          metadata_url: https://petstore.example.test/.well-known/oauth-protected-resource/mcp
+          authorization_servers: [https://auth.example.test/realms/petstore]
+        servers:
+          - upstream_id: pets
+            mcp_path: /mcp
+            tool_aliases: {search: search_pets}
+          - upstream_id: orders
+            mcp_path: /mcp
+            tool_aliases: {search: search_orders}
+          - upstream_id: customers
+            mcp_path: /mcp
+            tool_aliases: {search: search_customers}
+
+  - id: petstore-mcp-metadata
+    host: petstore.example.test
+    uri: /.well-known/oauth-protected-resource/mcp
+    plugins:
+      mcp-proxy:
+        mode: metadata
+        auth_metadata: *mcp_metadata
+
+  - id: mcp-bridge
+    host: mcp-proxy.internal.invalid
+    uri: /_mcp_proxy_internal
+    priority: 20000
+    plugins:
+      mcp-proxy:
+        mode: bridge
+#END
+```
+
+Use this as the route configuration in `conf/apisix.yaml` with APISIX's standalone
+YAML configuration provider. For an Admin API deployment, expand the YAML aliases
+and create each Upstream and Route object through the corresponding API. This
+file is separate from the APISIX process configuration: merge
+[examples/config.yaml](examples/config.yaml) as described in [Install](#install).
+
+The example assumes HTTPS terminates at a trusted ingress in front of APISIX's
+HTTP listener on port 9080. Replace the public domains, ingress trust addresses,
+issuer and service DNS names with your deployment values. Service-to-gateway
+traffic uses HTTP here; configure HTTPS/mTLS upstreams when required by your
+network's trust boundary. The services must accept their full REST paths
+(`/api/pets`, `/api/orders`, `/api/customers` and their subpaths), because these
+routes forward the URI unchanged.
+
+Both interfaces use the `petstore` realm, with separate audiences:
+
+- REST tokens must contain the `petstore-rest` audience.
+- MCP tokens must contain the `https://petstore.example.test/mcp` audience.
+  Configure the issuer to issue that audience and all three services to validate
+  it on their MCP endpoints. The plugin forwards the caller's bearer token
+  unchanged.
+
+The client IDs above are the values APISIX uses for audience validation. Configure
+client registration, allowed scopes and audience issuance in your identity
+provider; the gateway configuration does not create them. Services still enforce
+tenant and operation permissions. The metadata route is public, while the bridge
+requires its loopback peer and one-use ticket. Keep unrelated global auth/IP
+policies off those two routes as described in [Install](#install).
+
+This is an illustrative configuration, not a bundled Petstore application. Its
+YAML and references are checked; no running Petstore services are included.
 
 ## Configuration reference
 

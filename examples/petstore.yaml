@@ -1,0 +1,99 @@
+# Standalone APISIX route configuration (apisix.yaml).
+upstreams:
+  - id: pets
+    type: roundrobin
+    nodes: {"pets:8080": 1}
+  - id: orders
+    type: roundrobin
+    nodes: {"orders:8080": 1}
+  - id: customers
+    type: roundrobin
+    nodes: {"customers:8080": 1}
+
+routes:
+  - id: pets-rest
+    host: petstore.example.test
+    uris: [/api/pets, /api/pets/*]
+    upstream_id: pets
+    plugins:
+      openid-connect: &rest_auth
+        discovery: https://auth.example.test/realms/petstore/.well-known/openid-configuration
+        client_id: petstore-rest
+        bearer_only: true
+        use_jwks: true
+        claim_validator:
+          issuer:
+            valid_issuers: [https://auth.example.test/realms/petstore]
+          audience:
+            required: true
+            match_with_client_id: true
+        set_access_token_header: false
+        set_id_token_header: false
+        set_userinfo_header: false
+
+  - id: orders-rest
+    host: petstore.example.test
+    uris: [/api/orders, /api/orders/*]
+    upstream_id: orders
+    plugins:
+      openid-connect: *rest_auth
+
+  - id: customers-rest
+    host: petstore.example.test
+    uris: [/api/customers, /api/customers/*]
+    upstream_id: customers
+    plugins:
+      openid-connect: *rest_auth
+
+  - id: petstore-mcp
+    host: petstore.example.test
+    uri: /mcp
+    plugins:
+      openid-connect:
+        discovery: https://auth.example.test/realms/petstore/.well-known/openid-configuration
+        client_id: https://petstore.example.test/mcp
+        bearer_only: true
+        use_jwks: true
+        claim_validator:
+          issuer:
+            valid_issuers: [https://auth.example.test/realms/petstore]
+          audience:
+            required: true
+            match_with_client_id: true
+        set_access_token_header: false
+        set_id_token_header: false
+        set_userinfo_header: false
+      mcp-proxy:
+        server_info: {name: petstore, version: "1.0.0"}
+        instructions: Search pets, check orders and find customer information.
+        auth_metadata: &mcp_metadata
+          resource: https://petstore.example.test/mcp
+          metadata_url: https://petstore.example.test/.well-known/oauth-protected-resource/mcp
+          authorization_servers: [https://auth.example.test/realms/petstore]
+        servers:
+          - upstream_id: pets
+            mcp_path: /mcp
+            tool_aliases: {search: search_pets}
+          - upstream_id: orders
+            mcp_path: /mcp
+            tool_aliases: {search: search_orders}
+          - upstream_id: customers
+            mcp_path: /mcp
+            tool_aliases: {search: search_customers}
+
+  - id: petstore-mcp-metadata
+    host: petstore.example.test
+    uri: /.well-known/oauth-protected-resource/mcp
+    plugins:
+      mcp-proxy:
+        mode: metadata
+        auth_metadata: *mcp_metadata
+
+  - id: mcp-bridge
+    host: mcp-proxy.internal.invalid
+    uri: /_mcp_proxy_internal
+    priority: 20000
+    plugins:
+      mcp-proxy:
+        mode: bridge
+#END
