@@ -1,7 +1,26 @@
-# Standalone APISIX route configuration (apisix.yaml).
+# Petstore: three microservices behind one APISIX gateway.
+#
+# Each service already implements both its REST API and a stateless MCP endpoint.
+# The gateway combines MCP catalogs; it does not generate tools from REST APIs.
+#
+# Save as conf/apisix.yaml when using the standalone YAML configuration provider.
+# This is route data, not conf/config.yaml. Also merge examples/config.yaml to
+# enable mcp-proxy, extra_lua_path, the ticket dictionary and streaming settings.
+# For the Admin API, expand YAML aliases and submit each Upstream/Route separately.
+#
+# Replace petstore.example.test, auth.example.test and service DNS names below.
+# HTTPS is assumed to terminate at a trusted ingress forwarding to APISIX :9080.
+# Configure trusted ingress IPs in conf/config.yaml; never trust arbitrary XFF.
+# HTTP upstreams are illustrative. Use HTTPS/mTLS where the network requires it.
+# Issuer clients, audiences and permissions must be configured separately.
+
+# Shared upstream objects serve both REST and MCP traffic. IDs below are referenced
+# by REST upstream_id and by mcp-proxy.servers[].upstream_id.
 upstreams:
   - id: pets
     type: roundrobin
+    # DNS must resolve from APISIX. The number is a load-balancing weight.
+    # Add further service instances here to distribute traffic between replicas.
     nodes: {"pets:8080": 1}
   - id: orders
     type: roundrobin
@@ -11,28 +30,43 @@ upstreams:
     nodes: {"customers:8080": 1}
 
 routes:
+  # REST routes use APISIX's ordinary proxy pipeline; mcp-proxy is not involved.
   - id: pets-rest
+    # Match the public hostname supplied by the ingress, not the service DNS name.
     host: petstore.example.test
+    # Include both the collection path and subpaths. No prefix is stripped:
+    # pets:8080 must accept /api/pets and /api/pets/... as written.
     uris: [/api/pets, /api/pets/*]
     upstream_id: pets
     plugins:
+      # Define a YAML anchor so all three REST routes share the same auth policy.
       openid-connect: &rest_auth
+        # The discovery document supplies the issuer's endpoints and signing keys.
         discovery: https://auth.example.test/realms/petstore/.well-known/openid-configuration
+        # With match_with_client_id below, this is the required REST audience.
         client_id: petstore-rest
+        # API requests carry bearer tokens; do not redirect callers to a login page.
         bearer_only: true
+        # Validate JWTs using the issuer's published JWKS signing keys.
         use_jwks: true
         claim_validator:
           issuer:
+            # Must match the token's iss claim exactly, including the realm path.
             valid_issuers: [https://auth.example.test/realms/petstore]
           audience:
+            # A token from the same realm alone is insufficient: aud must include
+            # petstore-rest. These checks do not enforce domain/tenant permissions.
             required: true
             match_with_client_id: true
+        # Avoid extra token/userinfo headers. The caller's Authorization bearer
+        # remains available to the backend, which enforces its own permissions.
         set_access_token_header: false
         set_id_token_header: false
         set_userinfo_header: false
 
   - id: orders-rest
     host: petstore.example.test
+    # The orders service receives this full URI unchanged.
     uris: [/api/orders, /api/orders/*]
     upstream_id: orders
     plugins:
@@ -40,17 +74,23 @@ routes:
 
   - id: customers-rest
     host: petstore.example.test
+    # The customers service receives this full URI unchanged.
     uris: [/api/customers, /api/customers/*]
     upstream_id: customers
     plugins:
       openid-connect: *rest_auth
 
+  # One public MCP endpoint aggregates the three services. Do not attach a
+  # route-level upstream_id or service_id: mcp-proxy selects an upstream per call.
   - id: petstore-mcp
     host: petstore.example.test
     uri: /mcp
     plugins:
       openid-connect:
+        # Same realm as REST, but a separate audience for the logical MCP resource.
         discovery: https://auth.example.test/realms/petstore/.well-known/openid-configuration
+        # Configure the issuer to put this value in aud for authorized MCP clients.
+        # All three MCP backends must accept it; no token exchange is performed.
         client_id: https://petstore.example.test/mcp
         bearer_only: true
         use_jwks: true
@@ -64,15 +104,27 @@ routes:
         set_id_token_header: false
         set_userinfo_header: false
       mcp-proxy:
+        # mode defaults to proxy. This identity is returned during initialize;
+        # its version describes your public MCP service, not the plugin package.
         server_info: {name: petstore, version: "1.0.0"}
+        # Guidance for MCP clients, not an authorization or access-control rule.
         instructions: Search pets, check orders and find customer information.
+        # Reuse this exact metadata on the unauthenticated metadata route below.
         auth_metadata: &mcp_metadata
+          # Public logical resource identity, including HTTPS and the MCP path.
           resource: https://petstore.example.test/mcp
+          # RFC 9728 path-based discovery: prefix the resource path with
+          # /.well-known/oauth-protected-resource on the same public origin.
           metadata_url: https://petstore.example.test/.well-known/oauth-protected-resource/mcp
           authorization_servers: [https://auth.example.test/realms/petstore]
+        # Catalog discovery uses the caller's token at each backend. Services
+        # retain tenant and operation authorization. Catalog failures fail closed.
         servers:
           - upstream_id: pets
+            # Internal endpoint on the upstream; independent of its REST paths.
             mcp_path: /mcp
+            # Backend tool name -> public tool name. A call to search_pets is
+            # forwarded to this service as search. A null alias hides a tool.
             tool_aliases: {search: search_pets}
           - upstream_id: orders
             mcp_path: /mcp
@@ -80,7 +132,14 @@ routes:
           - upstream_id: customers
             mcp_path: /mcp
             tool_aliases: {search: search_customers}
+        # Resolve other tool/prompt collisions with aliases or hiding rules.
+        # Resource URIs/template patterns need one owner; they are not renamed.
+        # Default transport: bridge_host=mcp-proxy.internal.invalid,
+        # bridge_path=/_mcp_proxy_internal, bridge_port=9080 on this APISIX instance.
 
+  # Clients must be able to discover the OAuth resource before authenticating.
+  # Do not add openid-connect or an upstream here. Exclude this route from any
+  # unrelated global auth/IP rules that would prevent public metadata access.
   - id: petstore-mcp-metadata
     host: petstore.example.test
     uri: /.well-known/oauth-protected-resource/mcp
@@ -89,11 +148,25 @@ routes:
         mode: metadata
         auth_metadata: *mcp_metadata
 
+  # Reserved transport route used to reach APISIX's native upstream pipeline.
+  # One bridge serves all public MCP hosts; this Host needs no DNS record because
+  # the plugin connects directly to 127.0.0.1 on bridge_port.
   - id: mcp-bridge
     host: mcp-proxy.internal.invalid
     uri: /_mcp_proxy_internal
+    # Keep above competing routes for this host/path, including catch-all routes.
+    # Reserve the internal Host exclusively for this bridge. If you customize it
+    # or the URI, change bridge_host/bridge_path on the public MCP config too.
     priority: 20000
     plugins:
+      # Keep only mcp-proxy here: public auth/IP policy already ran on /mcp.
+      # Exclude the bridge from unrelated global auth/IP/redirect policies.
+      # Access still requires a loopback peer AND a random expiring one-use
+      # ticket. Supplying this Host or a forged ticket from outside is insufficient.
+      # The original Host is restored after validation; upstream pass_host rules
+      # then determine the backend Host/SNI. Do not add a default upstream here.
       mcp-proxy:
         mode: bridge
+
+# APISIX standalone loader requires this completion marker. Keep it last.
 #END
