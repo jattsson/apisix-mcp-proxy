@@ -82,9 +82,20 @@ This is an independently maintained plugin, not an Apache-distributed plugin.
 
 ### 1. Obtain and install the Lua files
 
-Clone https://github.com/jattsson/apisix-mcp-proxy or extract a release archive.
-For repeatable deployments, use a reviewed commit or release tag. See
-[release packaging](docs/releases.md) for checksum verification and contents.
+Download the Lua distribution and SHA-256 checksum from
+[GitHub Releases](https://github.com/jattsson/apisix-mcp-proxy/releases/tag/v0.1.0):
+
+```sh
+curl -fLO https://github.com/jattsson/apisix-mcp-proxy/releases/download/v0.1.0/apisix-mcp-proxy-0.1.0.tar.gz
+curl -fLO https://github.com/jattsson/apisix-mcp-proxy/releases/download/v0.1.0/SHA256SUMS
+sha256sum -c SHA256SUMS
+tar -xzf apisix-mcp-proxy-0.1.0.tar.gz
+cd apisix-mcp-proxy-0.1.0
+```
+
+Alternatively, clone https://github.com/jattsson/apisix-mcp-proxy and check out
+`v0.1.0`. This release is distributed as a tar archive; it is not published to
+LuaRocks. See [release packaging](docs/releases.md) for the archive contents.
 Use the pinned APISIX distribution with its APISIX-Runtime extensions. From the
 repository root, install the Lua source with permission to write to the destination:
 no custom APISIX build or separate aggregation service is needed.

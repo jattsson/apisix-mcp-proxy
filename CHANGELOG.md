@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - first release candidate
+## 0.1.0 - 2026-10-08
 
 - Pure Lua APISIX plugin for stateless MCP 2025-11-25 aggregation.
 - Tools, prompts, resources and scalar resource templates; aliases and hiding.

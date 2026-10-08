@@ -16,10 +16,17 @@ Verify the download with sha256sum -c SHA256SUMS, extract it, and run
 bash scripts/install.sh /opt/mcp-proxy from the extracted directory. Follow the
 README for APISIX configuration and rollout; extracting is not activation.
 
-Before publishing, require successful CI on the exact release commit, inspect
-archive contents and test installation into an empty directory. Create a draft
-GitHub release named v0.1.0 targeting that commit, attach the archive and checksum,
-and use CHANGELOG.md for release notes. Publishing a release and making the
+Releases are published at https://github.com/jattsson/apisix-mcp-proxy/releases.
+GitHub Actions builds and tests the archive in the package job, then uploads it
+with SHA256SUMS as the release-package workflow artifact. Only use the artifact
+from a successful workflow run on the exact release commit. Verify its checksum
+and REVISION before attaching it to the draft GitHub release; use CHANGELOG.md
+for release notes. GitHub's automatically generated source archives also include
+the development files, so use the named plugin archive for installation.
+
+For v0.1.0, the package job checks two identical builds and installs all nine Lua
+files plus LICENSE, NOTICE and VERSION into an empty directory. Lua style and
+integration tests must also pass before publishing the draft. Publishing a release and making the
 repository public are separate operations. Review all public refs and their
 history before changing visibility; a clean current tree does not clean history.
 
