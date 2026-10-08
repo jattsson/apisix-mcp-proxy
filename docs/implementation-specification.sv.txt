@@ -1,0 +1,202 @@
+MCP-PROXY — IMPLEMENTERINGSUPPDRAG TILL CODEX
+Beslut från intervju med Jimmy Mattsson, 7 oktober 2026
+Revision 2: kompletterad med lärdomar från Kongs dokumentation och bugfixhistorik.
+Status: Kravspecifikation. Ingen implementation eller verifierad klientkompatibilitet levereras med detta dokument.
+
+UPPDRAG
+Implementera ett vanligt Lua-plugin för Apache APISIX med namnet mcp-proxy i ett fristående repository. Leverera fungerande kod, README, installations- och konfigurationsexempel samt körda automatiserade tester. Slutför implementationen; stanna inte vid design eller scaffolding. Gör rutinmässiga tekniska val själv och dokumentera dem. Följ repositoryts AGENTS.md om sådana finns.
+
+Beskrivning: Expose multiple MCP services through a single endpoint.
+
+Använd senaste stabila APISIX vid implementationstillfället, verifiera versionen mot officiell release och lås testmiljön till exakt version/image. Docker används för körning och reproducerbara integrationstester, men slutprodukten är ett normalt installerbart APISIX-plugin. Kräv inte en separat Java/Node-aggregatortjänst eller fork av APISIX.
+
+KONTEXT OCH ARKITEKTUR
+Användaren har egna microservices med REST och vill lägga MCP bredvid REST. Varje tjänsts REST- och MCP-adapter anropar samma applikationsservices/use cases och domänlager. Pluginet innehåller ingen affärslogik.
+
+Klient -> APISIX authplugin -> mcp-proxy -> rätt microservices MCP-adapter.
+Alla tjänster använder samma auth-realm. Bearer-token ska vidarebefordras oförändrad. Upstreams kontrollerar själva användarens behörigheter. Ingen token exchange, separat användarinloggning per upstream eller egen OAuth authorization server i pluginet.
+
+Arkitekturförutsättning: den publika endpointen och dess interna implementationer är avsedda att utgöra en gemensam logisk skyddad MCP-resurs. Dokumentera issuer/audience-konfiguration. Samma realm ensam innebär inte att alla tokens är giltiga för alla tjänster. Kräv korrekt issuer/audience-validering i authlagret och backend; lös inte detta genom att stänga av audiencekontroll.
+
+ChatGPT är obligatoriskt kompatibilitetsmål. Claude och Codex är önskade mål, men får inte beskrivas som testade utan bevis.
+Upstreams använder Java MCP SDK/Spring AI. Uppgiften "Spring AI 2.0.1" är PRELIMINÄR. Användaren har godkänt tillgång till en verklig tjänst för kompatibilitetskontroll. Dess repository/endpoint måste tillhandahållas i implementationsmiljön; ingen adress eller åtkomst ska hittas på.
+
+FÖRSTA STEGET: LÅS TEKNISK KOMPATIBILITET
+1. Inspektera den verkliga tjänstens pom.xml/Gradle och upplösta beroenden. Fastställ SDK-version, transport, initialize-beteende, eventuell Mcp-Session-Id och capabilities.
+2. Läs officiell specifikation för faktiskt stödda MCP-revisioner. Dokumentera exakt versionsmatris i README. Förutsätt inte att klienter eller SDK använder senaste specifikation bara för att den finns publicerad.
+3. Välj minsta gemensamma profil som fungerar med ChatGPT och den verkliga tjänsten. Sessionslös drift är önskvärd där stödd, men har INTE beslutats som ett krav av användaren. Stateless affärslogik är inte bevis för sessionslös MCP-transport.
+4. Om vald revision använder initialize/notifications/initialized: implementera korrekt livscykel på båda sidor. Om backend utfärdar sessions-ID måste detta hanteras, inte bara ignoreras. Återanvänd aldrig en användarbunden session för annan användare.
+5. Nyare revisionssemantik (t.ex. server/discover i stället för initialize) får bara implementeras enligt verifierad officiell specifikation och faktisk SDK/klientkompatibilitet. Bygg inte en generell versionsöversättare om den inte behövs.
+6. Läs APISIX källkod för pluginfaser, kortslutande authsvar, Upstream-objekt, balancer, health checks, TLS och interna subrequests. Verifiera dessa risker tidigt med små integrationstester. Att läsa första noden ur ett Upstream-objekt är inte en godtagbar integration.
+
+Om tjänsten inte finns tillgänglig: implementera och testa mot exakt dokumenterad SDK-baserad fixture. Markera verklig tjänst och ChatGPT-test som ej verifierade. Hitta inte på testresultat och markera inte kompatibilitetsgaten som godkänd.
+
+BESLUTAD OMFATTNING
+- Enbart Streamable HTTP. Ingen legacy HTTP+SSE-transport och ingen stdio-processhantering.
+- SSE-svar inom Streamable HTTP ska stödjas. Transporten är inte begränsad till application/json-svar.
+- tools/list och tools/call.
+- prompts/list och prompts/get.
+- resources/list, resources/templates/list och resources/read.
+- Ingen resource subscription i v1.
+- Ingen elicitation i v1. Ingen sampling/roots eller annan serverinitierad klientinteraktion om den inte krävs av basprotokollet. Annonsera inte sådant stöd.
+- Inget task-/bakgrundsjobbsstöd i v1. Verktyg som obligatoriskt kräver unsupported funktioner ska ge tydlig kompatibilitetsdiagnos, inte falskt annonseras som fungerande.
+- completion/complete ingår inte automatiskt bara för att prompts/templates ingår. Dokumentera som utanför v1 om inte nödvändigt för verifierad klientkompatibilitet.
+- Basprotokollets nödvändiga meddelanden, statuskoder och notifikationer ska hanteras korrekt för vald revision.
+- Progress på pågående anrops SSE-ström får förmedlas där det stöds. Annonsera inte listChanged/subscriptions utan fungerande leveransmekanism.
+
+ROUTES OCH KONFIGURATION
+Pluginet ska kunna aktiveras på flera routes. Varje route/plugin-konfiguration har egen publik MCP-identitet, instruktioner, upstreamlista och exponering. Ingen sammanblandning mellan /mcp/farm och /mcp/admin.
+Varje serverpost refererar till ett APISIX Upstream-objekt genom upstream_id och anger mcp_path. Inget obligatoriskt tjänstealias/prefix.
+Återanvänd Upstream-objektens nodval, lastbalansering, hälsokontroller, DNS/TLS och klientcertifikatreferenser där relevanta. Egna fan-out-anrop får inte tyst kringgå dessa funktioner. Dokumentera eventuella API-versionberoenden. Om full återanvändning visar sig tekniskt blockerad: redovisa konkret hinder, reducera inte kravet i smyg.
+
+Följande är föreslagen konfigurationsform, inte påstående om befintligt APISIX-schema. Implementera ett validerat plugin-schema och justera namn vid behov utan att ändra betydelsen:
+{
+  "server_info": {"name": "farm-mcp", "version": "1.0.0"},
+  "instructions": "Gemensamma instruktioner för klienten",
+  "auth_metadata": {
+    "resource": "https://example.test/mcp/farm",
+    "metadata_url": "https://example.test/.well-known/oauth-protected-resource/mcp/farm",
+    "authorization_servers": ["https://auth.example.test/realms/farm"],
+    "scopes_supported": ["mcp:read"]
+  },
+  "servers": [
+    {
+      "upstream_id": "leases",
+      "mcp_path": "/mcp",
+      "tool_aliases": {"search": "search_leases", "delete_all": null},
+      "prompt_aliases": {},
+      "hidden_resource_uris": [],
+      "hidden_resource_templates": []
+    }
+  ]
+}
+
+Timeouts: gemensamma standardvärden med åsidosättning per server; skilj anslutning, läs-inaktivitet och total tidsbudget. Föreslagna utvecklarstandarder, ej användarlåsta: 3 s connect, 10 s total discovery per server, 60 s read-idle och 120 s total operation, max 16 samtidiga upstream-operationer. Välj och dokumentera rimliga bounds för svarsstorlek, antal sidor och routningstabell. Ingen obegränsad buffring.
+All oberoende upstreamkommunikation sker parallellt, under konfigurerbar gräns. Cursorberoende sidor måste hämtas i ordning per upstream. Använd icke-blockerande OpenResty-I/O; inga blockerande processanrop i requestvägen.
+
+NAMN, ALIAS OCH DOLDA OBJEKT
+Oförändrat namn som standard. tool_aliases och prompt_aliases mappar upstreamens originalnamn till publikt namn. JSON null betyder dolt, saknad nyckel betyder oförändrat. Hantera cjson.null/ngx.null korrekt; Lua nil betyder inte ett uttryckligt null-fält.
+Alias översätts tillbaka endast i protokollfältet vid vidarebefordran. Skriv inte om godtyckliga argument, beskrivningar eller resultatinnehåll.
+Dolda objekt utelämnas och blockeras vid direkt anrop. Ett namnbytt objekt nås inte genom sitt gamla namn, om inte det namnet entydigt tillhör ett annat tillåtet objekt. Upprätthåll detta även före första listningen.
+Kontrollera kollisioner EFTER alias/filter och över samtliga tillgängliga upstreams i relevant katalog. Olösta kollisioner gör att hela kataloganropet misslyckas. Välj aldrig första träffen. tools och prompts har separata namnrymder.
+Samma begränsning gäller inbördes kollision mellan två alias i en server. Konfigurationsfel som kan upptäckas statiskt avvisas direkt.
+
+RESURSER
+Tjänsterna ansvarar för unika, icke överlappande URI:er och URI-templates. Pluginet skriver inte om URI:er i kataloger, prompts eller tool-resultat.
+Stöd separat blockering av exakta URI:er och exakta template-definitioner. Blockerad template blockerar även resources/read av matchande konkreta URI:er. Filter gäller före routning, även vid kallstart.
+Implementera URI-template-matchning enligt vald MCP-revision/URI-template-standard; använd inte naiv strängprefixmatchning som fullständig matcher. Definiera stödd templateprofil om nödvändigt och avvisa ej stödda varianter tydligt. Godtycklig templateöverlappning kan vara svår att bevisa statiskt: identifiera uppenbara konflikter vid discovery och avvisa fler än en match vid konkret läsning. Ingen godtycklig precedence mellan två upstreams.
+Resource links i tools/prompts kan avse URI:er som inte finns i resources/list. Använd templates när det går. En olistad URI utan entydig ägare får ett tydligt fel; skicka inte resources/read till alla servrar på chans. Dokumentera backendkontraktet.
+Innehåll i redan returnerade tools/prompts är ingen separat åtkomstkontrollgräns: URI-blockering garanterar inte att samma data inte exponeras av andra use cases.
+
+KATALOGHÄMTNING OCH FEL
+Ingen katalogcache, ingen stale fallback och inga partiella katalogsvar. Varje listrequest hämtar relevant katalog färskt från alla deltagande servers, med aktuell Authorization och relevanta vidarebefordrade headers.
+En frisk server som enligt förhandlade capabilities saknar t.ex. prompts bidrar med tom promptlista; det är inte ett driftfel. Ingen capability får antas utan verifiering.
+Hämta samtliga upstreamsidor; upptäck repetitiva cursors och tillämpa bounds. Returnera hela sammanslagna katalogen i ett svar utan nextCursor. Ge stabil deterministisk ordning. Om klienten skickar en icke stödd cursor: returnera tydligt protokollfel.
+Timeout, transportfel, ogiltigt katalogsvar eller olöst kollision hos en deltagande upstream gör att hela relevanta kataloganropet misslyckas. Ingen nyligen uppdaterad delmängd får bli en giltig routningssnapshot efter misslyckad aggregering.
+JSON-RPC-fel, tool-resultat med isError och HTTP authfel ska förbli skilda. Mappa gatewayfel till dokumenterade statuskoder/protokollfel. Lägg inte interna adresser, tokens eller stack traces i publika fel.
+
+ROUTNINGSTABELL — INTE KATALOGCACHE
+Spara ägarskap och namnöversättning från fullständigt lyckade listningar. Tabellen används för att välja upstream, aldrig för att svara med gammal katalog vid fel.
+Om namn/URI saknas, gör relevant discovery med aktuell requestkontext och försök sedan routa en gång. Detta är discovery, inte retry av användaroperationen. Anrop måste fungera utan att samma klient först kört list.
+Testa invalidation både vid enskild konfigurationsändring och full konfigurationssynk/reload. Ingen gammal snapshot får återintroduceras av en långsam discovery som startade före ändringen. Spara endast nödvändig routingmetadata, med bounds och invalidation. Uppdatera snapshots atomiskt och ersätt borttagna poster. Invalidera vid ändrad route/plugin/upstream-konfiguration. Definiera bortfall och refresh vid workeromstart/utgången snapshot.
+Kataloger kan vara användar-/tenant-/headerberoende. En global tabell byggd av godtycklig användares filtrerade lista kan inte bevisa global entydighet. För v1: isolera dynamiska routningssnapshots med route/config-generation, protokollprofil och ett icke-reversibelt fingeravtryck av Authorization plus de end-to-end requestheaders som kan påverka discovery. Spara inte rå token i nyckel/loggar. Om relevanta variationer inte kan avgränsas säkert, gör färsk discovery i den aktuella kontexten före routning. Delning av användarspecifika kataloger får inte införas för att optimera detta.
+Routningstabellen ersätter aldrig backendens behörighetskontroll. Delegerad operation skickas endast till vald upstream; övriga behöver inte vara uppe vid känd och fortfarande giltig route.
+
+AUTH OCH DISCOVERY
+Befintligt APISIX-authplugin validerar token. Kör API/Bearer-beteende utan loginredirect från MCP-endpoint. mcp-proxy ska inte reimplementera JWT-kryptografi.
+mcp-proxy ansvarar för Protected Resource Metadata och för att komplettera Bearer WWW-Authenticate med publik resource_metadata-URL. Bevara relevanta error, error_description och scope-värden; parsa headern korrekt inklusive flera challenges. Ersätt aldrig dessa med en godtycklig statisk sträng.
+Metadata måste vara åtkomlig utan token. Stöd flera publika MCP-resurser på samma host med entydiga path-baserade metadata-URL:er. En separat offentlig APISIX-route som kör samma plugins metadataläge är acceptabel och bör visas i konfigurationsexemplet. Dokumentera korrekt RFC 9728-adress och exakt resource-identitet. Härled inte publik origin från obetrodd Host/X-Forwarded-Host.
+Säkerställ i riktig APISIX att challenge-komplettering fungerar när authpluginet returnerar tidigt i rewrite/access. Testa pluginordning och header_filter; anta inte att en senare access-hook körs.
+401/403 från upstream ska bevaras med relevanta scope-challenges men peka på den publika gemensamma resursens metadata. Vid flera authfel i fan-out: använd deterministisk policy; bevara scopes och kombinera endast kompatibla insufficient_scope-krav inom samma resursmodell. Dokumentera prioritet, exempelvis invalid_token före insufficient_scope. Inga partiella kataloger vid authfel.
+Identiska realmnamn är inte audiencekonfiguration. Dokumentera nödvändiga inställningar i authpluginet och exempeltjänsten samt kontroller av utgången token och fel audience.
+OAuth-serverns klientregistrering/PKCE och ChatGPTs faktiska anslutning ska verifieras separat; att metadata returnerar 200 bevisar inte ett fungerande OAuth-flöde.
+
+HEADERS, TRANSPORT OCH TLS
+Vidarebefordra vanliga end-to-end requestheaders som normal proxy, inklusive Authorization oförändrad, tenantheaders, språk och tracing. Ingen plugin-specifik allowlist. Detta innebär inte blind tillit till klientens forwardingheaders: behåll APISIX normala trusted-proxy-regler och skydd för interna headers. Bevara den verifierade klientkontexten genom interna anrop utan att uppgradera godtycklig X-Forwarded-For till betrodd klient-IP.
+Hantera hop-by-hop och headers namngivna i Connection korrekt; hantera Host/SNI via Upstream-konfiguration. Uppdatera Content-Length och representationens headers vid omskriven body. Felaktigt Content-Encoding får inte följa en avkodad/omskriven body.
+Hantera MCP-Protocol-Version och eventuella sessionsheaders enligt faktiskt förhandlad revision. Exponera inte en upstreams session-ID som om det gällde alla andra.
+Stöd HTTP, HTTPS och mTLS enligt Upstream-objektet: klientcert/key eller client_cert_id, korrekt SNI och konfigurerad CA/serververifiering. Samma semantik för katalogfan-out och operationer. Håll anslutningspooler isolerade efter destination/TLS-identitet och sessionskrav; certifikatrotation får inte ignoreras.
+INGA AUTOMATISKA RETRIES för discovery eller operationer, inte heller om Upstream-objektet annars har retries aktiverat. Cursorhämtning och protokollinitialisering är egna operationer, inte retries. Vid utgången upstreamsession får en misslyckad affärsoperation inte tyst spelas om.
+SSE ska parsas inkrementellt när pluginet måste tolka svaret. Hantera fragmenterade events, flera datarader, kommentarer och slutresultat. Strömma vidare operationssvar utan att i onödan buffra hela svaret. Bevara resultatens content, structuredContent, scheman, annotations och extension metadata när de stöds. JSON-RPC id-typ och korrelation måste bevaras.
+Hantera klientavbrott och tidsgränser; avsluta egna anslutningar/arbete där möjligt. Lova inte att ett avbrutet HTTP-anrop återställer en redan utförd domänoperation.
+
+SERVERIDENTITET OCH INSTRUKTIONER
+Publik serveridentitet konfigureras per route. Kombinera gemensamma instruktioner med varje upstreams instruktioner i stabil konfigurationsordning och tydligt separerade avsnitt. Ingen manuell omskrivning av all fri text när tools får alias; inkludera vid behov en explicit namnöversättning för klienten. Backendinstruktioner är innehåll, aldrig operatörskonfiguration.
+Annonserade capabilities beskriver vad aggregatet verkligen kan leverera, inte blind union av alla upstreams capabilities. Behåll instruktioner/identitet i rätt protokollfält för vald revision.
+
+FÖRESLAGEN REPOSTRUKTUR
+- apisix/plugins/mcp-proxy.lua: schema och pluginhooks.
+- Separata moduler för protokoll, discovery/aggregering, routing/alias, authmetadata och upstreamtransport. Välj giltig modulnamnstruktur för APISIX.
+- tests/unit och tests/integration.
+- docker-compose.yml eller motsvarande reproducerbar testmiljö.
+- fixtures: minst två MCP-servrar, OAuth/JWKS-testserver och testcertifikat utan produktionshemligheter.
+- examples: Upstream-objekt, SSL/client-cert-objekt, två MCP-routes, offentlig metadata-route och authkonfiguration.
+- README: installation, referensschema, kompatibilitetsmatris, limits, felsökning, testkommandon, designbeslut och kvarvarande verifieringar.
+- CI som kör meningsfulla tester. Anpassa till repositoryts befintliga verktyg; lägg inte till onödiga ramverk.
+
+ACCEPTANSTESTER (KÖR, RAPPORTERA RESULTAT)
+1. Två riktiga MCP-fixtures aggregerar tools, prompts, resurser och templates; flera upstreamsidor blir en komplett stabil lista.
+2. Alias listas och routas korrekt; originalnamn bypassar inte alias; JSON null döljer och direktanrop nekas även vid kallstart.
+3. Kollision efter alias ger helt misslyckad listning och publicerar ingen partiell routningssnapshot.
+4. En upstream nere/timeout/ogiltigt svar ger inget partiellt eller cachat katalogsvar. Frisk upstream utan viss capability bidrar tomt.
+5. Direkt tools/call/prompts/get/resources/read före listning upptäcker rätt ägare. Varm routing kontaktar bara avsedd upstream.
+6. Templates, resursblockering, tvetydig match och olistad URI får korrekt beteende.
+7. Två routes och två användare/tenantheaders isoleras; ändrad konfiguration och borttagna verktyg invaliderar routing korrekt. Workeromstart ger korrekt kallstart.
+8. Bearer-token och vanliga custom headers når rätt backend; Host, hop-by-hop och ändrad Content-Length hanteras rätt.
+9. Saknad/utgången token ger 401 med publik resource_metadata även vid authpluginets tidiga avslut. Metadata är offentlig. Fel audience nekas. Upstream insufficient_scope bevaras.
+10. HTTP, HTTPS och mTLS testas för BÅDE fan-out och operationer, inklusive fel CA, fel klientcertifikat och fungerande certifikatreferens. Testa lastbalansering mellan minst två noder och undvikande av ohälsosam nod.
+11. Fragmenterade SSE-svar, progress/slutresultat, stora svar över gräns, cursorloop, timeout och klientavbrott hanteras utan läckande arbete eller trasig JSON-RPC.
+12. En skrivande fixture räknar faktiska anrop. Förlorat svar/timeout/5xx får aldrig ge automatiskt andra försök, även med retries på Upstream-objektet.
+13. Oberoende discovery sker faktiskt parallellt; verifiera samtidiga pågående anrop hellre än ett skört exakt tidskrav. Samtidighetsgräns respekteras.
+14. Unsupported elicitation, subscriptions och tasks annonseras inte. Hantera protokollrevision och sessioner enligt verifierad profil; inga godtyckligt vidarebefordrade session-ID:n.
+15. Verifiera integration mot användarens faktiska Java-tjänst och notera exakt beroendeversion. Kör verkligt ChatGPT-anslutningstest med OAuth, katalog och minst ett verktygsanrop när åtkomst finns. Claude/Codex smoke tests om tillgängliga. Ej genomförda tester märks EJ VERIFIERADE.
+
+
+16. JSON-roundtrip genom verklig Lua-runtime: bevara tools: [], required: [], properties: {}, null, false och 0 samt nästlade arrayer/objekt i inputSchema, outputSchema, arguments, content och structuredContent. Använd en oberoende parser i testharnessen för att verifiera typer, inte samma kod som implementationen. Ett filtrerat tomt resultat måste fortfarande ha korrekt arraytyp. JSON-null i aliases ska fortfarande betyda dolt efter konfigurationsinläsning.
+17. Intern requestkontext: kör via extern reverse proxy och en publik HTTPS-port som inte är standard. Verifiera rätt publik metadata-URL, upstream Host/SNI, avsedd port, verifierad klient-IP, tenant och tracekontext. Förfalskad X-Forwarded-For från obetrodd klient får inte påverka trusted klientidentitet. Testa tillsammans med APISIX IP-baserad policy om interna subrequests passerar sådan policy; lokala interna anrop får inte oavsiktligt bedömas som användarens IP.
+18. Full konfigurationsersättning under pågående discovery: ändra aliases/upstreams, låt gammal discovery slutföras och säkerställ att gammal generation inte återpubliceras. Testa samtidig första discovery från två workers. Ingen övergående tom katalog får presenteras som ett lyckat fullständigt resultat.
+19. Drift med minst två workers och två APISIX-instanser. Tvinga listning och efterföljande operationer till olika workers/instanser, följt av restart. Sessionslösa profiler ska återupptäcka routing korrekt. För profiler med sessioner: bevisa fungerande sessionskorrelation över noder enligt vald strategi, eller dokumentera explicit nödvändig affinity och testa den. Inga dolda antaganden om att samma worker alltid används. Ingen session får kopplas till fel användare, route eller upstream.
+20. Felklassificering: testa upstreams som ger 401 med challenge, 403 insufficient_scope, 429 med Retry-After, 502 med HTML, trasig JSON samt ett korrekt MCP-resultat med isError. Inga sekundära parserfel får maskera ursprungsfelet. Ingen retry. Kontrollera även att pluginet inte lovar en fristående SSE/GET-ström när endast POST-svarsströmmen stöds.
+21. Komprimerade och stora bodies: implementera dokumenterat stöd eller ett avsiktligt korrekt avvisande av Content-Encoding. Testa gzip, felaktig komprimering och ogiltig JSON; använd inte 413 som allmänt parserfel. Tillämpa gräns även på dekomprimerad storlek. Intern Content-Length/Content-Encoding ska motsvara faktiskt överförda bytes.
+
+FÖRSTÄRKTA IMPLEMENTATIONSKRAV EFTER KONG-GRANSKNING
+JSON-typer: välj och konfigurera APISIX/OpenRestys JSON-codec så att tomma arrayer, tomma objekt och null överlever decode/encode. Global ändring av en delad codecs inställningar får inte påverka andra plugins. Undvik återkodning av operationssvar när ingen protokolländring krävs, men bevara korrekt SSE-hantering och korrelation.
+
+Discoveryidentitet: samma användares bearer-token och kontext används för kataloghämtning och operationer, även vid kallstart och efter reload. Inför inte en privilegierad service-token för discovery; det skulle ändra den överenskomna modellen och kunna ge en annan katalog än användarens.
+
+Sessionsstrategi är en tidig kompatibilitetsgate: dokumentera klientrevision, upstreamrevision och sessionstyp separat. Föredra sessionslös profil om tjänst och klient stödjer den. Om sessioner krävs, välj och verifiera strategi innan huvudimplementationen. Redis är inte ett nytt automatiskt krav; workerlokalt minne är inte ensamt ett robust svar för flernodsdrift. Routingtabellens kallstart kan lösas genom ny discovery, men förlorad protokollsession måste hanteras enligt vald revision och får inte utlösa omspelning av affärsoperationer.
+
+HTTP-fel och MCP-fel: klassificera status och mediatyp före tolkning. Uppströms felmeddelanden får inte slentrianmässigt bli "invalid MCP JSON". Bevara relevanta auth- och throttlingheaders utan att läcka intern topologi. Sätt dokumenterade publika fel för aggregeringsfel.
+
+KONG SOM REFERENS, INTE NY OMFATTNING
+Granskningen visar rapporterade buggar kring JSON-arrayer, uteblivna scope-challenges, förlorad klient-IP/port, ACL-exponering, cache efter synk, felannonserad SSE och felklassificering. Detta motiverar regressionstesterna ovan; det är inte ett påstående att samma fel redan finns i APISIX.
+Kongs AI Gateway 2.0 dokumenterar separat discovery-auth, klientheaders och sessionsalternativ. Vi behåller våra egna beslut: användartoken hela vägen, ingen katalogcache, inga automatiska retries och ingen ny ACL-motor.
+Gatewaypluginet AI MCP Proxy och AI Gateway 2.0/Konnect är olika produktspår. Deras funktioner och begränsningar får inte blandas ihop eller tas som bevis för direkt återanvändbar öppen implementation. Kongs dokumentation är inspirations- och testunderlag, inte en ändring till REST-konvertering i vårt plugin.
+Källor, granskade 7 oktober 2026:
+https://developer.konghq.com/plugins/ai-mcp-proxy/changelog/
+https://developer.konghq.com/ai-gateway/entities/ai-mcp-server/
+https://developer.konghq.com/ai-gateway/mcp-version-support/
+
+SLUTRAPPORT
+Beskriv vad som implementerats, exakt testade versioner, körda kommandon och resultat, eventuella begränsningar och kvarstående externa tester. Leverera ett användbart repo med installationsinstruktioner och konfiguration. Ingen produktiondeploy, publicering eller ändring av verkliga microservices ingår utan särskild instruktion. Testning mot godkänd tjänst ska använda läsande eller särskilt avsedda testoperationer.
+
+KÄLLOR ATT VERIFIERA VID IMPLEMENTATION
+https://apisix.apache.org/docs/apisix/plugin-develop/
+https://apisix.apache.org/docs/apisix/admin-api/
+https://apisix.apache.org/docs/apisix/plugins/openid-connect/
+https://apisix.apache.org/docs/apisix/mtls/
+https://github.com/apache/apisix
+https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
+https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+https://modelcontextprotocol.io/specification/2026-07-28/changelog
+https://github.com/modelcontextprotocol/java-sdk
+https://docs.spring.io/spring-ai/reference/
+
+OBS: Versionsuppgifter och stöd i dokumentation är inte bevis för vad användarens tjänst eller ChatGPT faktiskt stöder. Inspektera och testa. Använd ovanstående som källor, inte som anledning att automatiskt implementera alla revisioner.
+
+FÖRTYDLIGANDE: INGEN DEFAULT-BACKEND
+Den publika MCP-routen ska kunna konfigureras med uri och plugins utan service_id, upstream eller route-nivåns upstream_id. De verkliga Upstream-referenserna finns i mcp-proxy.servers. Ingen dummy-service och ingen separat "default MCP"-server krävs.
+Pluginet äger gemensamma protokollsvar, discovery/aggregering och fel för okända metoder. Vid enskilda operationer väljs rätt Upstream dynamiskt. Metadata exponeras separat utan auth. Alla kodvägar måste antingen avsluta med korrekt svar eller installera en giltig upstream för proxying; ingen väg får falla igenom till APISIX standardproxy utan upstream.
+Lägg till acceptanstest: skapa publik MCP-route och metadataroute utan service/default upstream, verifiera initialize/discovery (enligt vald revision), metadata, aggregering, routat verktygsanrop samt okänd metod. APISIX officiella mocking-plugin visar att en plugin-route kan svara utan upstream: https://apisix.apache.org/docs/apisix/plugins/mocking/ . Verifiera samma beteende på den låsta APISIX-versionen.

@@ -1,0 +1,13 @@
+plugins { id 'java' }
+repositories { mavenCentral() }
+dependencyLocking { lockAllConfigurations() }
+dependencies {
+    implementation 'io.modelcontextprotocol.sdk:mcp-core:2.0.1'
+    implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson3:2.0.1'
+    implementation 'org.apache.tomcat.embed:tomcat-embed-core:11.0.24'
+}
+sourceSets.main.java.srcDirs = ['.']
+tasks.register('copyDependencies', Copy) {
+    from configurations.runtimeClasspath
+    into layout.buildDirectory.dir('libs')
+}

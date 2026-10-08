@@ -1,0 +1,83 @@
+name: mcp-proxy-tests
+services:
+  gateway:
+    image: apache/apisix:3.19.0-debian@sha256:9a7e45dc943fbf10ec916d1232bae4cda9302ae28a4696cfb83c2da01d261141
+    volumes:
+      - ./.test/conf/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./.test/conf/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./apisix:/opt/mcp-proxy/apisix:ro
+      - ./.test/lua:/opt/tests:ro
+      - ./tests:/opt/test-suite:ro
+    ports:
+      - '127.0.0.1:19080:9080'
+    depends_on:
+      - adversary
+  adversary:
+    image: python:3.14.3-slim@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+    command: ['python', '/fixture/adversary.py']
+    volumes:
+      - ./fixtures:/fixture:ro
+    ports:
+      - '127.0.0.1:18080:8080'
+  adversary-2:
+    image: python:3.14.3-slim@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+    command: ['python', '/fixture/adversary.py']
+    environment:
+      NODE: b
+    volumes:
+      - ./fixtures:/fixture:ro
+  java-a:
+    build: ./fixtures/java
+    environment:
+      FIXTURE_NAME: java-a
+  java-b:
+    build: ./fixtures/java
+    environment:
+      FIXTURE_NAME: java-b
+  secure:
+    image: python:3.14.3-slim@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+    command: ['python', '/fixture/adversary.py']
+    environment:
+      TLS_MODE: tls
+    volumes:
+      - ./fixtures:/fixture:ro
+      - ./.test/certs:/certs:ro
+  mtls:
+    image: python:3.14.3-slim@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+    command: ['python', '/fixture/adversary.py']
+    environment:
+      TLS_MODE: mtls
+    volumes:
+      - ./fixtures:/fixture:ro
+      - ./.test/certs:/certs:ro
+  oidc:
+    image: python:3.14.3-slim@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+    command: ['python', '/fixture/oidc.py']
+    volumes:
+      - ./fixtures:/fixture:ro
+      - ./.test/certs:/certs:ro
+  gateway-2:
+    image: apache/apisix:3.19.0-debian@sha256:9a7e45dc943fbf10ec916d1232bae4cda9302ae28a4696cfb83c2da01d261141
+    volumes:
+      - ./.test/conf/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./.test/conf/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./apisix:/opt/mcp-proxy/apisix:ro
+      - ./.test/lua:/opt/tests:ro
+    ports:
+      - '127.0.0.1:19081:9080'
+  reverse-proxy:
+    image: python:3.14.3-slim@sha256:5e59aae31ff0e87511226be8e2b94d78c58f05216efda3b07dbbed938ec8583b
+    command: ['python', '/fixture/reverse-proxy.py']
+    volumes:
+      - ./fixtures:/fixture:ro
+      - ./.test/certs:/certs:ro
+    ports:
+      - '127.0.0.1:9443:9443'
+    networks:
+      default:
+        ipv4_address: 10.231.241.10
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.231.241.0/24

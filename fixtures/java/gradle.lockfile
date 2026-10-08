@@ -1,0 +1,20 @@
+# This is a Gradle generated file for dependency locking.
+# Manual edits can break the build and are not advised.
+# This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :dependencies --write-locks
+com.ethlo.time:itu:1.14.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-annotations:2.21=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.networknt:json-schema-validator:3.0.6=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.modelcontextprotocol.sdk:mcp-core:2.0.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.modelcontextprotocol.sdk:mcp-json-jackson3:2.0.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+io.projectreactor:reactor-core:3.7.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.apache.tomcat.embed:tomcat-embed-core:11.0.24=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.apache.tomcat:tomcat-annotations-api:11.0.24=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.reactivestreams:reactive-streams:1.0.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.slf4j:slf4j-api:2.0.17=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.snakeyaml:snakeyaml-engine:3.0.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson.core:jackson-core:3.1.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson.core:jackson-databind:3.1.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson.dataformat:jackson-dataformat-yaml:3.1.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+tools.jackson:jackson-bom:3.1.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+empty=annotationProcessor,testAnnotationProcessor

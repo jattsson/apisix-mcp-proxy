@@ -1,0 +1,21 @@
+{
+  "upstreams": [
+    {"id":"leases","type":"roundrobin","scheme":"https","pass_host":"rewrite","upstream_host":"leases.internal","nodes":{"10.0.1.10:8443":1,"10.0.1.11:8443":1},"tls":{"verify":true,"ca_certs":["REPLACE_WITH_PEM_CA"],"client_cert_id":"mcp-client"},"checks":{"active":{"type":"https","http_path":"/health","healthy":{"interval":5,"successes":2},"unhealthy":{"interval":2,"tcp_failures":2}}}}
+  ],
+  "ssls": [
+    {"id":"mcp-client","type":"client","cert":"REPLACE_WITH_PEM_CLIENT_CERT","key":"REPLACE_WITH_PEM_CLIENT_KEY"}
+  ],
+  "routes": [
+    {"id":"mcp-bridge","host":"mcp-proxy.internal.invalid","priority":20000,"uri":"/_mcp_proxy_internal","plugins":{"mcp-proxy":{"mode":"bridge"}}},
+    {"id":"farm-mcp","uri":"/mcp/farm","plugins":{
+      "openid-connect":{"client_id":"https://example.test/mcp/farm","discovery":"https://auth.example.test/realms/farm/.well-known/openid-configuration","bearer_only":true,"use_jwks":true,"claim_validator":{"issuer":{"valid_issuers":["https://auth.example.test/realms/farm"]},"audience":{"required":true,"match_with_client_id":true}},"set_access_token_header":false,"set_id_token_header":false,"set_userinfo_header":false},
+      "mcp-proxy":{"server_info":{"name":"farm-mcp","version":"1.0.0"},"instructions":"Shared farm instructions","auth_metadata":{"resource":"https://example.test/mcp/farm","metadata_url":"https://example.test/.well-known/oauth-protected-resource/mcp/farm","authorization_servers":["https://auth.example.test/realms/farm"],"scopes_supported":["mcp:read"]},"servers":[{"upstream_id":"leases","mcp_path":"/mcp","tool_aliases":{"search":"search_leases","delete_all":null}}]}
+    }},
+    {"id":"farm-metadata","uri":"/.well-known/oauth-protected-resource/mcp/farm","plugins":{"mcp-proxy":{"mode":"metadata","auth_metadata":{"resource":"https://example.test/mcp/farm","metadata_url":"https://example.test/.well-known/oauth-protected-resource/mcp/farm","authorization_servers":["https://auth.example.test/realms/farm"],"scopes_supported":["mcp:read"]}}}},
+    {"id":"admin-mcp","uri":"/mcp/admin","plugins":{
+      "openid-connect":{"client_id":"https://example.test/mcp/admin","discovery":"https://auth.example.test/realms/farm/.well-known/openid-configuration","bearer_only":true,"use_jwks":true,"claim_validator":{"issuer":{"valid_issuers":["https://auth.example.test/realms/farm"]},"audience":{"required":true,"match_with_client_id":true}},"set_access_token_header":false,"set_id_token_header":false,"set_userinfo_header":false},
+      "mcp-proxy":{"server_info":{"name":"admin-mcp","version":"1.0.0"},"auth_metadata":{"resource":"https://example.test/mcp/admin","metadata_url":"https://example.test/.well-known/oauth-protected-resource/mcp/admin","authorization_servers":["https://auth.example.test/realms/farm"]},"servers":[{"upstream_id":"leases","mcp_path":"/mcp","tool_aliases":{"search":"admin_search","delete_all":null}}]}
+    }},
+    {"id":"admin-metadata","uri":"/.well-known/oauth-protected-resource/mcp/admin","plugins":{"mcp-proxy":{"mode":"metadata","auth_metadata":{"resource":"https://example.test/mcp/admin","metadata_url":"https://example.test/.well-known/oauth-protected-resource/mcp/admin","authorization_servers":["https://auth.example.test/realms/farm"]}}}}
+  ]
+}

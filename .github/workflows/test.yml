@@ -1,0 +1,41 @@
+name: APISIX plugin tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  lua-style:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Lua style, lint and function documentation
+        run: bash scripts/style.sh
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run pinned APISIX and Java SDK fixtures
+        run: bash scripts/test.sh
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results
+          path: .test/integration-results.txt
+      - name: Stop fixtures
+        if: always()
+        run: docker compose down
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify release distribution
+        run: python3 tests/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: .test/release/*

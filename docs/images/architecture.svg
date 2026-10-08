@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="920" viewBox="0 0 1200 920" role="img" aria-labelledby="title desc">
+  <title id="title">One gateway. Two interfaces.</title>
+  <desc id="desc">REST clients and MCP clients use the same Apache APISIX gateway. Both trust a shared identity realm. Standard REST routing and the Lua MCP aggregation plugin use native upstream routing to reach microservices, each exposing REST and MCP interfaces over shared domain logic and permissions. Shared realm does not imply interchangeable tokens.</desc>
+  <defs>
+    <linearGradient id="canvas" x2="1" y2="1"><stop stop-color="#f8fafc"/><stop offset="1" stop-color="#eef2ff"/></linearGradient>
+    <linearGradient id="gateway" x2="1" y2="1"><stop stop-color="#14233d"/><stop offset="1" stop-color="#233857"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-15%" width="120%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#14233d" flood-opacity=".08"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 1 1 L 8 5 L 1 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="tealArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 1 1 L 8 5 L 1 9" fill="none" stroke="#0d9488" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="blueArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 1 1 L 8 5 L 1 9" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <style>text{font-family:Arial,Helvetica,sans-serif}.muted{fill:#64748b}.label{font-size:12px;font-weight:700;letter-spacing:1.8px}.small{font-size:14px}.body{font-size:16px}.bold{font-weight:700}</style>
+  </defs>
+  <rect width="1200" height="920" rx="24" fill="url(#canvas)"/>
+  <text x="52" y="53" class="label" fill="#6366f1">APISIX MCP PROXY</text>
+  <text x="52" y="99" font-size="36" font-weight="700" fill="#14233d">One gateway. Two interfaces.</text>
+  <text x="52" y="130" font-size="17" class="muted">Your services, available to applications and AI through the same gateway.</text>
+
+  <!-- Clients -->
+  <rect x="52" y="169" width="380" height="96" rx="16" fill="#ffffff" stroke="#dbe4ec" filter="url(#shadow)"/>
+  <rect x="73" y="191" width="48" height="48" rx="12" fill="#e0f5f0"/>
+  <rect x="84" y="202" width="26" height="21" rx="3" fill="none" stroke="#0d9488" stroke-width="2"/>
+  <path d="M89 229h16m-8-6v6" stroke="#0d9488" stroke-width="2" stroke-linecap="round"/>
+  <text x="139" y="209" font-size="20" class="bold" fill="#14233d">Applications</text>
+  <text x="139" y="236" class="body muted">Web, mobile and REST clients</text>
+  <rect x="456" y="169" width="380" height="96" rx="16" fill="#ffffff" stroke="#dbe4ec" filter="url(#shadow)"/>
+  <rect x="477" y="191" width="48" height="48" rx="12" fill="#eeedff"/>
+  <path d="M501 200l4 11 11 4-11 4-4 11-4-11-11-4 11-4z" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round"/>
+  <text x="543" y="209" font-size="20" class="bold" fill="#14233d">AI clients</text>
+  <text x="543" y="236" class="body muted">MCP-compatible assistants</text>
+  <path d="M242 265v64" fill="none" stroke="#0d9488" stroke-width="2" marker-end="url(#tealArrow)"/>
+  <path d="M646 265v64" fill="none" stroke="#6366f1" stroke-width="2" marker-end="url(#blueArrow)"/>
+  <text x="259" y="304" class="small" fill="#0f766e">REST + bearer token</text>
+  <text x="663" y="304" class="small" fill="#4f46e5">MCP + bearer token</text>
+
+  <!-- Shared gateway -->
+  <rect x="52" y="336" width="784" height="256" rx="20" fill="url(#gateway)" filter="url(#shadow)"/>
+  <text x="78" y="372" font-size="23" class="bold" fill="#ffffff">Apache APISIX</text>
+  <text x="811" y="370" text-anchor="end" class="label" fill="#b4c4dc">SHARED GATEWAY</text>
+  <rect x="76" y="391" width="736" height="37" rx="9" fill="#314561"/>
+  <circle cx="95" cy="410" r="4" fill="#a5b4fc"/>
+  <text x="109" y="415" class="small" fill="#edf2ff">OIDC validation</text>
+  <text x="792" y="415" text-anchor="end" class="small" fill="#c5d3e6">Issuer + audience + route policy</text>
+  <rect x="76" y="444" width="354" height="87" rx="12" fill="#193f49" stroke="#2f6d72"/>
+  <text x="96" y="473" font-size="19" class="bold" fill="#bbf7e6">REST routing</text>
+  <text x="96" y="500" class="small" fill="#b8d8db">Existing API routes to each service</text>
+  <rect x="448" y="444" width="364" height="87" rx="12" fill="#34385f" stroke="#6265a4"/>
+  <text x="468" y="473" font-size="19" class="bold" fill="#e0ddff">mcp-proxy</text>
+  <rect x="726" y="454" width="68" height="25" rx="12" fill="#555b91"/>
+  <text x="760" y="471" text-anchor="middle" font-size="12" class="bold" fill="#ffffff">LUA</text>
+  <text x="468" y="500" class="small" fill="#d2d4ef">One MCP endpoint. All service catalogs.</text>
+  <text x="444" y="566" text-anchor="middle" class="small" fill="#c5d3e6">Native upstream routing / TLS / load balancing / health checks</text>
+
+  <!-- Identity is configuration, not a request hop -->
+  <rect x="881" y="336" width="267" height="256" rx="20" fill="#ffffff" stroke="#dbe4ec" filter="url(#shadow)"/>
+  <rect x="903" y="356" width="42" height="42" rx="12" fill="#fff0da"/>
+  <path d="M924 365l11 4v8c0 7-11 12-11 12s-11-5-11-12v-8z" fill="none" stroke="#b7791f" stroke-width="2"/>
+  <text x="903" y="432" font-size="21" class="bold" fill="#14233d">Shared identity</text>
+  <text x="903" y="459" class="body muted">Same realm / issuer</text>
+  <path d="M903 478h223" stroke="#e2e8f0"/>
+  <text x="903" y="506" class="small muted">Client registrations, audiences</text>
+  <text x="903" y="528" class="small muted">and scopes can differ.</text>
+  <text x="903" y="567" font-size="12" fill="#b7791f">Dashed line: issuer / JWKS trust</text>
+  <path d="M881 409h-45" fill="none" stroke="#b7791f" stroke-width="2" stroke-dasharray="4 5"/>
+
+  <!-- Native routing to both interfaces on each service -->
+  <path d="M444 592v32M179 624h530M179 624v30M444 624v30M709 624v30" fill="none" stroke="#94a3b8" stroke-width="2"/>
+  <g fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"><path d="M179 647v15"/><path d="M444 647v15"/><path d="M709 647v15"/></g>
+  <text x="881" y="638" class="label muted">MICROSERVICES</text>
+  <text x="881" y="664" class="small muted">REST routes use REST endpoints.</text>
+  <text x="881" y="686" class="small muted">MCP proxy uses MCP endpoints.</text>
+
+  <g>
+    <rect x="52" y="670" width="254" height="154" rx="16" fill="#ffffff" stroke="#dbe4ec" filter="url(#shadow)"/>
+    <text x="76" y="703" font-size="19" class="bold" fill="#14233d">Customer service</text>
+    <rect x="76" y="719" width="95" height="30" rx="8" fill="#e0f5f0"/>
+    <text x="123" y="739" text-anchor="middle" font-size="13" class="bold" fill="#0f766e">REST</text>
+    <rect x="183" y="719" width="99" height="30" rx="8" fill="#eeedff"/>
+    <text x="232" y="739" text-anchor="middle" font-size="13" class="bold" fill="#4f46e5">MCP</text>
+    <text x="76" y="780" class="small muted">Shared business logic</text>
+    <text x="76" y="802" class="small muted">Domain permissions</text>
+  </g>
+  <g>
+    <rect x="317" y="670" width="254" height="154" rx="16" fill="#ffffff" stroke="#dbe4ec" filter="url(#shadow)"/>
+    <text x="341" y="703" font-size="19" class="bold" fill="#14233d">Job service</text>
+    <rect x="341" y="719" width="95" height="30" rx="8" fill="#e0f5f0"/>
+    <text x="388" y="739" text-anchor="middle" font-size="13" class="bold" fill="#0f766e">REST</text>
+    <rect x="448" y="719" width="99" height="30" rx="8" fill="#eeedff"/>
+    <text x="497" y="739" text-anchor="middle" font-size="13" class="bold" fill="#4f46e5">MCP</text>
+    <text x="341" y="780" class="small muted">Shared business logic</text>
+    <text x="341" y="802" class="small muted">Domain permissions</text>
+  </g>
+  <g>
+    <rect x="582" y="670" width="254" height="154" rx="16" fill="#ffffff" stroke="#dbe4ec" filter="url(#shadow)"/>
+    <text x="606" y="703" font-size="19" class="bold" fill="#14233d">Your next service</text>
+    <rect x="606" y="719" width="95" height="30" rx="8" fill="#e0f5f0"/>
+    <text x="653" y="739" text-anchor="middle" font-size="13" class="bold" fill="#0f766e">REST</text>
+    <rect x="713" y="719" width="99" height="30" rx="8" fill="#eeedff"/>
+    <text x="762" y="739" text-anchor="middle" font-size="13" class="bold" fill="#4f46e5">MCP</text>
+    <text x="606" y="780" class="small muted">Shared business logic</text>
+    <text x="606" y="802" class="small muted">Domain permissions</text>
+  </g>
+  <text x="881" y="748" class="small bold" fill="#4f46e5">Original MCP bearer token</text>
+  <text x="881" y="772" class="small muted">Forwarded to the owning service.</text>
+  <text x="881" y="794" class="small muted">No token exchange.</text>
+  <path d="M52 853h1096" stroke="#d5deea"/>
+  <text x="52" y="883" class="small muted">Pure Lua plugin. Runs inside APISIX. Authorization stays with each service.</text>
+  <text x="1148" y="883" text-anchor="end" font-size="12" fill="#64748b">CONCEPTUAL ARCHITECTURE</text>
+</svg>

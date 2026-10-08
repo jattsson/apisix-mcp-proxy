@@ -1,0 +1,8 @@
+APISIX MCP Proxy
+Copyright 2026 jattsson and contributors
+
+Licensed under the Apache License, Version 2.0.
+This is an independent project, not an Apache Software Foundation distribution.
+Apache APISIX is a trademark of the Apache Software Foundation.
+Runtime libraries are supplied by APISIX/OpenResty and retain their own licenses.
+The release package does not bundle those libraries or the development fixtures.
