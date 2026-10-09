@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Defer MCP dispatch until all access policies have run.
+- Bound aggregate discovery bytes/entries and cached ownership size; expire catalog kinds independently.
+- Restrict URI templates to bounded deterministic matching without captures.
+- Accept empty SSE primers and coalesce partial lines with newline-aware event limits.
+- Validate server types safely and accept bounded disk-spooled/chunked request bodies.
+- Share a public request deadline; preserve upstream 504 and normalize response media types.
+- Validate Origin before rejecting non-POST methods and add sanitized transport diagnostics.
+- Extend native APISIX regression coverage and document review decisions and numeric limits.
+
 ## 0.1.0 - 2026-10-08
 
 - Pure Lua APISIX plugin for stateless MCP 2025-11-25 aggregation.

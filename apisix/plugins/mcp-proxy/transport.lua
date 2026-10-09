@@ -71,16 +71,42 @@ end
 -- @param emit function|nil Callback(raw_json, is_stream): success, error string.
 -- @return table|boolean|nil Reply or notification success; else nil, diagnostic, metadata.
 function transport.request(conf, ctx, server, message, deadline, emit)
+    local phase = "queue"
+
+
+    --- Record bounded transport diagnostics without credentials or payloads.
+    -- @param status integer Public HTTP failure status.
+    -- @param reason string Sanitized failure category.
+    -- @param extra table|nil Allowed public response headers.
+    -- @return string, table Public diagnostic and HTTP failure metadata.
+    local function request_failure(status, reason, extra)
+        ngx_log(
+            ngx.WARN,
+            "MCP upstream failure: upstream_id=",
+            server.upstream_id,
+            " method=",
+            message.method,
+            " phase=",
+            phase,
+            " status=",
+            status
+        )
+        return failure(status, reason, extra)
+    end
+    deadline = math_min(deadline, ctx.mcp_deadline or deadline)
+    if ctx.mcp_discovery_failed then
+        return nil, request_failure(502, "Aggregate discovery limit exceeded")
+    end
     if ctx.mcp_aborted then
-        return nil, failure(499, "Client disconnected")
+        return nil, request_failure(499, "Client disconnected")
     end
     local dict = ngx.shared.mcp_proxy_tickets
     if not dict then
-        return nil, failure(503, "MCP transport is not configured")
+        return nil, request_failure(503, "MCP transport is not configured")
     end
     local bytes = random_bytes(32, true)
     if not bytes then
-        return nil, failure(503, "MCP transport unavailable")
+        return nil, request_failure(503, "MCP transport unavailable")
     end
     local ticket = resty_string_to_hex(bytes)
     local route_id = tostring(ctx.conf_id or ctx.matched_route.value.id)
@@ -98,7 +124,7 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         end
     end
     if not slot then
-        return nil, failure(504, "Upstream concurrency budget exhausted")
+        return nil, request_failure(504, "Upstream concurrency budget exhausted")
     end
 
 
@@ -128,18 +154,18 @@ function transport.request(conf, ctx, server, message, deadline, emit)
     local encoded_record = json_encode(record)
     if not encoded_record then
         release()
-        return nil, failure(502, "Invalid internal transport context")
+        return nil, request_failure(502, "Invalid internal transport context")
     end
     local ok = dict:safe_add(ticket, encoded_record, math_max(1, deadline - ngx_now()))
     if not ok then
         release()
-        return nil, failure(503, "MCP transport capacity exhausted")
+        return nil, request_failure(503, "MCP transport capacity exhausted")
     end
     local body = json_encode(message)
     if not body then
         release()
         dict:delete(ticket)
-        return nil, failure(502, "Unable to encode upstream request")
+        return nil, request_failure(502, "Unable to encode upstream request")
     end
     local client = http_new()
     local remaining = math_max(1, math_floor((deadline - ngx_now()) * 1000))
@@ -148,12 +174,14 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         remaining,
         math_min(remaining, budget(conf, server, "read_idle") * 1000)
     )
-    local connected =
+    phase = "connect"
+    local connected, connect_err =
         client:connect({ scheme = "http", host = "127.0.0.1", port = conf.bridge_port })
     if not connected then
         release()
         dict:delete(ticket)
-        return nil, failure(502, "MCP transport unavailable")
+        return nil,
+            request_failure(connect_err == "timeout" and 504 or 502, "MCP transport unavailable")
     end
     ctx.mcp_connections = ctx.mcp_connections or {}
 
@@ -183,6 +211,13 @@ function transport.request(conf, ctx, server, message, deadline, emit)
     forwarded["x-forwarded-for"] = record.forwarded_for
     forwarded["x-real-ip"] = record.client_ip
     forwarded.forwarded = nil
+    local request_left = deadline - ngx_now()
+    if request_left <= 0 then
+        close()
+        return nil, request_failure(504, "Upstream total deadline exceeded")
+    end
+    client:set_timeout(math_min(request_left, budget(conf, server, "read_idle")) * 1000)
+    phase = "headers"
     local response, err = client:request({
         method = "POST",
         path = conf.bridge_path,
@@ -191,7 +226,7 @@ function transport.request(conf, ctx, server, message, deadline, emit)
     })
     if not response then
         close()
-        return nil, failure(err == "timeout" and 504 or 502, "Upstream transport failed")
+        return nil, request_failure(err == "timeout" and 504 or 502, "Upstream transport failed")
     end
     if response.status < 200 or response.status >= 300 then
         local status = response.status
@@ -202,29 +237,30 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         elseif status == 429 then
             extra["Retry-After"] = response.headers["Retry-After"]
 
-        else
+        elseif status ~= 504 then
             status = 502
         end
         close()
-        return nil, failure(status, "Upstream HTTP request failed", extra)
+        return nil, request_failure(status, "Upstream HTTP request failed", extra)
     end
     if response.headers["Mcp-Session-Id"] then
         close()
-        return nil, failure(502, "Upstream requires sessions; stateless profile is incompatible")
+        return nil,
+            request_failure(502, "Upstream requires sessions; stateless profile is incompatible")
     end
     local encoding = response.headers["Content-Encoding"]
     if encoding and encoding ~= "identity" then
         close()
-        return nil, failure(502, "Compressed upstream responses are unsupported")
+        return nil, request_failure(502, "Compressed upstream responses are unsupported")
     end
     if message.id == nil and response.status == 202 then
         close()
         return true
     end
-    local media = (response.headers["Content-Type"] or ""):match("^[^;]+")
+    local media = (response.headers["Content-Type"] or ""):lower():match("^%s*([^;%s]+)")
     if media ~= "application/json" and media ~= "text/event-stream" then
         close()
-        return nil, failure(502, "Unexpected upstream response media type")
+        return nil, request_failure(502, "Unexpected upstream response media type")
     end
     local chunks, total, result = {}, 0, nil
     local parser = sse_new(conf.max_response_bytes)
@@ -257,11 +293,12 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         end
         return true
     end
+    phase = "body"
     while true do
         local left = deadline - ngx_now()
         if left <= 0 then
             close()
-            return nil, failure(504, "Upstream total deadline exceeded")
+            return nil, request_failure(504, "Upstream total deadline exceeded")
         end
         client:set_timeout(math_min(left, budget(conf, server, "read_idle")) * 1000)
         -- For SSE with Content-Length, a larger read can wait for the final
@@ -271,21 +308,33 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         if read_err then
             close()
             return nil,
-                failure(read_err == "timeout" and 504 or 502, "Upstream response interrupted")
+                request_failure(
+                    read_err == "timeout" and 504 or 502,
+                    "Upstream response interrupted"
+                )
         end
         if not chunk then
             break
         end
+        if ctx.mcp_discovering then
+            -- Cooperative light threads cannot interleave this non-yielding debit.
+            ctx.mcp_discovery_bytes = (ctx.mcp_discovery_bytes or 0) + #chunk
+            if ctx.mcp_discovery_bytes > conf.max_discovery_bytes then
+                ctx.mcp_discovery_failed = true
+                close()
+                return nil, request_failure(502, "Aggregate discovery byte limit exceeded")
+            end
+        end
         total = total + #chunk
         if total > conf.max_response_bytes then
             close()
-            return nil, failure(502, "Upstream response exceeds configured limit")
+            return nil, request_failure(502, "Upstream response exceeds configured limit")
         end
         if media == "text/event-stream" then
             local valid, why = sse_feed(parser, chunk, event)
             if not valid then
                 close()
-                return nil, failure(502, why)
+                return nil, request_failure(502, why)
             end
             if result then
                 break
@@ -300,17 +349,17 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         local msg = json_decode(raw)
         if not msg then
             close()
-            return nil, failure(502, "Malformed upstream JSON")
+            return nil, request_failure(502, "Malformed upstream JSON")
         end
         local valid, why = event(msg, raw)
         if not valid then
             close()
-            return nil, failure(502, why)
+            return nil, request_failure(502, why)
         end
     end
     close()
     if not result then
-        return nil, failure(502, "Upstream stream ended without a result")
+        return nil, request_failure(502, "Upstream stream ended without a result")
     end
     return result
 end

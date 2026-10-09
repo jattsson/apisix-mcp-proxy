@@ -58,9 +58,20 @@ check(not template_compile("fixture://host/{+path}"))
 check(not template_compile("fixture://host/{id*}"))
 check(not template_compile("fixture://host/{id:2}"))
 check(not template_compile("fixture://host/{broken"))
+check(not template_compile("fixture://host/{id}/{id}"))
+check(not template_compile("fixture://host/{a}{b}"))
+check(not template_compile("fixture://host/{a}-{b}"))
+check(not template_compile("fixture://host/" .. string.rep("x", 4096)))
+check(not template_is_match(pattern, "fixture://host/" .. string.rep("x", 4096)))
+local many = "fixture://host"
+for i = 1, 33 do
+    many = many .. "/{v" .. i .. "}"
+end
+check(not template_compile(many))
 local count = 0
 local parser = sse_new(2048)
-local stream = ': comment\rdata: {"jsonrpc":"2.0",\r\ndata: "id":0,"result":{"content":[]}}\r\n\r\n'
+local stream = ": comment\rid: primer\r\ndata:\r\n\r\nretry: 1000\n\n"
+    .. 'data: {"jsonrpc":"2.0",\r\ndata: "id":0,"result":{"content":[]}}\r\n\r\n'
 
 
 --- Verify the fragmented event after the parser assembles it.
@@ -76,4 +87,17 @@ for i = 1, #stream do
     assert(sse_feed(parser, stream:sub(i, i), verify_event))
 end
 check(count == 1)
-print(json_encode({ checks = checks, roundtrip = sample }))
+local long_line = sse_new(300000)
+for _ = 1, 262144 do
+    assert(sse_feed(long_line, "x", verify_event))
+end
+check(#long_line.pieces <= 256)
+check(not sse_feed(sse_new(1024), "data: broken\n\n", verify_event))
+check(not sse_feed(sse_new(16), string.rep("data:\n", 17), verify_event))
+local numbers = assert(
+    json_decode(
+        '{"safe":9007199254740991,"beyond":9007199254740993,'
+            .. '"decimal":1.2345678901234567,"exponent":1.25e-4}'
+    )
+)
+print(json_encode({ checks = checks, roundtrip = sample, numbers = numbers }))

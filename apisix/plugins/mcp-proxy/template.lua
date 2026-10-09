@@ -18,10 +18,10 @@ local template = {}
 -- @param uri_template string Resource URI template to validate.
 -- @return string|nil Anchored Lua pattern, or nil and a diagnostic string.
 function template.compile(uri_template)
-    if type(uri_template) ~= "string" then
+    if type(uri_template) ~= "string" or #uri_template > 4096 then
         return nil, "Invalid URI template"
     end
-    local pieces, pos = {}, 1
+    local pieces, pos, names, expressions = {}, 1, {}, 0
     while pos <= #uri_template do
         local first, last, name = uri_template:find("{([^{}]+)}", pos)
         local literal = first and uri_template:sub(pos, first - 1) or uri_template:sub(pos)
@@ -35,7 +35,16 @@ function template.compile(uri_template)
         if not name:match("^[%w_][%w_.]*$") then
             return nil, "Unsupported URI template: only scalar {var} expressions are supported"
         end
-        pieces[#pieces + 1] = "([%w_.~%%%-]*)"
+        expressions = expressions + 1
+        if expressions > 16 or names[name] then
+            return nil, "URI template exceeds 16 expressions or repeats a variable"
+        end
+        names[name] = true
+        local following = uri_template:sub(last + 1, last + 1)
+        if following ~= "" and (following == "{" or following:match("[%w_.~%%%-]")) then
+            return nil, "URI template variables require a reserved delimiter or end of URI"
+        end
+        pieces[#pieces + 1] = "[%w_.~%%%-]*"
         pos = last + 1
     end
     return "^" .. table_concat(pieces) .. "$"
@@ -47,6 +56,9 @@ end
 -- @param uri string Concrete resource URI.
 -- @return boolean Whether the URI matches the supported template profile.
 function template.is_match(pattern, uri)
+    if type(uri) ~= "string" or #uri > 4096 then
+        return false
+    end
     for position in uri:gmatch("%%()") do
         if not uri:sub(position, position + 1):match("^%x%x$") then
             return false

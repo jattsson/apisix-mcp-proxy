@@ -110,7 +110,11 @@ Merge [examples/config.yaml](examples/config.yaml) into APISIX's configuration.
 Add `mcp-proxy` to the existing plugin list (do not accidentally remove your auth
 plugins). Add `/opt/mcp-proxy/?.lua` to `apisix.extra_lua_path`, configure the
 `mcp_proxy_tickets` shared dictionary, enable client abort checking and disable
-NGINX proxy buffering. Set the body buffer to at least `max_request_bytes`.
+NGINX proxy buffering as shown in the example. This server-level buffering
+setting also affects other routes. APISIX 3.19's request-local alternative was
+rejected after it broke the native mTLS regression tests; see the review notes.
+Bodies spooled to a NGINX temporary file are accepted up to `max_request_bytes`;
+an 8 MiB in-memory body buffer is no longer required.
 
 ### 3. Configure upstreams and routes
 
@@ -376,12 +380,15 @@ each public route. Each server requires `upstream_id` and `mcp_path`.
 | `timeouts.connect` | 3 seconds, range 1–30 |
 | `timeouts.discovery_total` | 10 seconds per server including initialization and pages, range 1–120 |
 | `timeouts.read_idle` | 60 seconds, range 1–300 |
+| `timeouts.request_total` | 120 seconds for the whole public request after this plugin's access hook, including queueing, discovery and operation; range 1–600 |
 | `timeouts.operation_total` | 120 seconds including selected server initialization, range 1–600 |
-| Per-server `timeouts` | Overrides the corresponding global values |
+| Per-server `timeouts` | Overrides connect, discovery_total, read_idle and operation_total; request_total is route-only |
 | `max_concurrency` | 16 live upstream requests per route per instance, shared across workers; 1–64 |
 | `max_pages` | 64 pages per catalog per server; 1–1024 |
 | `max_entries` | 4096 entries per server and merged catalog; 1–16384 |
 | `max_response_bytes` | 4 MiB per upstream response and merged catalog; 1 KiB–32 MiB |
+| `max_discovery_bytes` | 16 MiB across all discovery responses, servers, pages and kinds; 1 KiB–64 MiB |
+| `max_discovery_entries` | 16384 entries across discovery before filtering; 1–65536 |
 | `max_request_bytes` | 1 MiB; 1 KiB–8 MiB |
 | `routing_ttl` | 30 seconds; 1–300 |
 | `bridge_path`, `bridge_port` | `/_mcp_proxy_internal`, `9080` |
@@ -421,7 +428,9 @@ allowed. Identical template shapes with different variable names are rejected.
 
 The supported RFC 6570 profile is scalar simple expansion `{variable}` with one
 variable per expression and unreserved/percent-encoded values. Operators, explode,
-prefix truncation and variable lists are rejected explicitly. Thus `{id}` is
+prefix truncation and variable lists are rejected explicitly. The additional size,
+uniqueness and delimiter limits are listed under [policy ordering and bounded
+discovery](#policy-ordering-and-bounded-discovery). Thus `{id}` is
 supported; `{+path}`, `{?a,b}`, `{id*}` and `{id:3}` are not. Backends needing other
 RFC 6570 forms must change the profile with tests before use. Hidden template
 definitions block matching concrete reads even at cold start. Resource filtering
@@ -483,7 +492,10 @@ responses are bounded and buffered for validation. A private cjson instance keep
 `[]`, `{}`, null, false and zero distinct without changing another plugin's codec.
 JSON-RPC IDs may be strings or safe integers (absolute value at most
 9007199254740991); use strings for larger identifiers. Non-finite JSON numbers are
-rejected, and numeric encoding uses 16 significant digits.
+rejected, and numeric encoding uses 16 significant digits. Requests are decoded
+and re-encoded using LuaJIT doubles: numeric lexemes and arbitrary decimal
+precision are not preserved. Send precision-sensitive identifiers, monetary
+amounts and integers beyond the safe range as strings agreed with the upstream.
 
 Compressed requests deliberately return 415 before parsing. Compressed upstream
 responses return a gateway error; `Accept-Encoding: identity` is sent upstream.
@@ -512,10 +524,13 @@ No subscriptions/listChanged, elicitation, sampling, roots, task execution,
 completion/complete, legacy HTTP+SSE or stdio are advertised. A catalog tool that
 requires tasks fails compatibility diagnosis during discovery.
 Client notifications are acknowledged; the gateway keeps no persistent MCP sessions.
+In particular, `notifications/cancelled` is acknowledged with 202 but does not
+cancel another request. Empty SSE `data:` events, IDs and retry hints are accepted
+as transport framing; this does not implement reconnection or event resumption.
 
 ## Test and development
 
-The automated suite covers 34 integration tests and 19 Lua helper assertions.
+The automated suite covers 40 integration tests and 28 Lua helper assertions.
 Deployment testing also covers OAuth PKCE/S256, refresh and audience isolation.
 Two tool calls have been confirmed through a real ChatGPT connection.
 
@@ -564,3 +579,40 @@ Source references: [APISIX releases](https://apisix.apache.org/downloads/),
 Licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for
 attribution, [CONTRIBUTING.md](CONTRIBUTING.md) for development, and
 [SECURITY.md](SECURITY.md) for vulnerability reporting.
+
+## Policy ordering and bounded discovery
+
+Public MCP responses are produced in `before_proxy`, after all `access` plugins,
+including lower-priority access policies. A policy in `before_proxy` must run
+before `mcp-proxy` (priority -500). The bridge still uses native APISIX upstream
+selection. Place authentication and admission controls on the public route.
+
+The public deadline starts in this plugin's access hook; per-server discovery and
+operation deadlines can narrow it, never extend it. Deadline checks occur at
+transport phase/read boundaries; the underlying HTTP client's header parser
+still uses socket timeouts, not an independently interrupting wall-clock timer.
+Use APISIX admission controls
+such as `limit-conn` to bound concurrent public requests; `max_concurrency` limits
+internal upstream work and does not bound the number of waiting public requests.
+
+Discovery bytes are debited before retaining response fragments, and entries
+before retaining catalog items. These budgets include hidden entries and apply
+to cold operation routing as well as list requests. Public list bounds include
+the JSON-RPC envelope. Limits bound encoded input, not exact Lua heap or RSS.
+
+Each cached catalog kind has its own expiry. Refreshing tools cannot keep an old
+prompt catalog alive. Ownership snapshots over 256 KiB serialized are not cached;
+the worker cache holds at most 256 fingerprints. This is a retention bound, not a
+claim that Lua heap use equals serialized bytes. All forwarded headers, including
+trace headers, continue to participate in the ownership fingerprint. Changing a
+trace header may cause fresh discovery; no header is silently assumed irrelevant
+to upstream authorization.
+
+Resource templates support at most 16 distinct scalar expressions and 4096 bytes
+per template and URI matched against a template. Each variable must end the URI or be followed by a
+reserved delimiter such as `/`, `?` or `#`. Repeated variables, adjacent variables
+and suffixes from the unreserved alphabet (for example `{id}.json`) are rejected.
+This restricted profile provides deterministic matching without Lua captures.
+
+See [the review disposition](docs/review-2026-10-09.md) for fixed findings,
+remaining limitations and verification scope.

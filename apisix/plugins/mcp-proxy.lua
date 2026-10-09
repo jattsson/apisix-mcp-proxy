@@ -27,6 +27,7 @@ local auth_metadata = auth.metadata
 local core_log_error = core.log.error
 local core_log_warn = core.log.warn
 local core_request_header = core.request.header
+local core_request_get_body = core.request.get_body
 local core_response_exit = core.response.exit
 local core_schema_check = core.schema.check
 local core_table_clone = core.table.clone
@@ -39,16 +40,15 @@ local json_is_object = json.is_object
 local math_abs = math.abs
 local math_floor = math.floor
 local math_max = math.max
+local math_min = math.min
 local ngx_exit = ngx.exit
 local ngx_flush = ngx.flush
 local ngx_now = ngx.now
 local ngx_on_abort = ngx.on_abort
 local ngx_print = ngx.print
 local ngx_req_clear_header = ngx.req.clear_header
-local ngx_req_get_body_data = ngx.req.get_body_data
 local ngx_req_get_headers = ngx.req.get_headers
 local ngx_req_get_method = ngx.req.get_method
-local ngx_req_read_body = ngx.req.read_body
 local ngx_req_set_header = ngx.req.set_header
 local routing_key = routing.key
 local routing_publish = routing.publish
@@ -80,8 +80,13 @@ local timeouts = {
         discovery_total = bounded(10, 1, 120),
         read_idle = bounded(60, 1, 300),
         operation_total = bounded(120, 1, 600),
+        request_total = bounded(120, 1, 600),
     },
 }
+-- Per-server limits can narrow individual phases, not redefine the public deadline.
+local server_timeouts = core_table_clone(timeouts)
+server_timeouts.properties = core_table_clone(timeouts.properties)
+server_timeouts.properties.request_total = nil
 local schema = {
     type = "object",
     additionalProperties = false,
@@ -132,7 +137,7 @@ local schema = {
                     prompt_aliases = aliases,
                     hidden_resource_uris = strings,
                     hidden_resource_templates = strings,
-                    timeouts = timeouts,
+                    timeouts = server_timeouts,
                 },
             },
         },
@@ -141,6 +146,8 @@ local schema = {
         max_pages = bounded(64, 1, 1024),
         max_entries = bounded(4096, 1, 16384),
         max_response_bytes = bounded(4194304, 1024, 33554432),
+        max_discovery_bytes = bounded(16777216, 1024, 67108864),
+        max_discovery_entries = bounded(16384, 1, 65536),
         max_request_bytes = bounded(1048576, 1024, 8388608),
         routing_ttl = bounded(30, 1, 300),
         bridge_port = bounded(9080, 1, 65535),
@@ -168,8 +175,14 @@ local mcp_proxy = { version = 0.1, priority = -500, name = "mcp-proxy", schema =
 function mcp_proxy.check_schema(conf)
     -- Standalone YAML uses lyaml.null (a table), whereas Admin API JSON uses
     -- cjson.null. Normalize the library's exact sentinel, never arbitrary {}.
+    if type(conf) ~= "table" then
+        return false, "Plugin configuration must be an object"
+    end
     local yaml_ok, yaml = pcall(require, "lyaml")
     for _, server in ipairs(type(conf.servers) == "table" and conf.servers or {}) do
+        if type(server) ~= "table" then
+            return false, "Each server must be an object"
+        end
         for _, field in ipairs({ "tool_aliases", "prompt_aliases" }) do
             if type(server[field]) == "table" then
                 for name, value in pairs(server[field]) do
@@ -247,6 +260,7 @@ local function defaults(conf)
         discovery_total = 10,
         read_idle = 60,
         operation_total = 120,
+        request_total = 120,
     }) do
         if not conf.timeouts[key] then
             conf.timeouts[key] = value
@@ -265,6 +279,15 @@ local function reply(status, value)
     if not body then
         core_log_error("MCP response serialization failed: ", err)
         return core_response_exit(500)
+    end
+    local ctx = ngx.ctx.api_ctx
+    if ctx and ctx.mcp_response_limit and #body > ctx.mcp_response_limit then
+        status = 502
+        body = json_encode({
+            jsonrpc = "2.0",
+            id = value.id or json.null,
+            error = { code = -32002, message = "Public response exceeds configured limit" },
+        })
     end
     ngx.header["Content-Type"] = "application/json"
     return core_response_exit(status, body)
@@ -340,7 +363,7 @@ end
 -- @param conf table Validated plugin configuration.
 -- @param ctx table APISIX context containing the consumed bridge ticket.
 -- @return nil Mutates ctx.upstream_conf, upstream URI and forwarding headers.
-function mcp_proxy.before_proxy(conf, ctx)
+local function prepare_bridge(conf, ctx)
     if conf.mode ~= "bridge" or not ctx.mcp_bridge then
         return
     end
@@ -407,9 +430,16 @@ local function handle_initialize(conf, ctx, message)
     -- @return table|nil Initialization result; else nil, diagnostic, metadata.
     local function initialize_server(server)
         local timeout = (server.timeouts or {}).discovery_total or conf.timeouts.discovery_total
-        return transport_initialize(conf, ctx, server, ngx_now() + timeout)
+        return transport_initialize(
+            conf,
+            ctx,
+            server,
+            math_min(ctx.mcp_deadline, ngx_now() + timeout)
+        )
     end
+    ctx.mcp_discovering = true
     local results, err, detail = discovery_parallel(conf, initialize_server)
+    ctx.mcp_discovering = false
     if not results then
         return fail(id, detail or { message = err })
     end
@@ -470,7 +500,8 @@ local function handle_catalog(conf, ctx, message, kind, spec)
     if not result then
         return fail(id, detail or { message = err })
     end
-    local encoded_catalog = json_encode(result.catalogs[kind])
+    local envelope = { jsonrpc = "2.0", id = id, result = { [spec.field] = result.catalogs[kind] } }
+    local encoded_catalog = json_encode(envelope)
     if not encoded_catalog or #encoded_catalog > conf.max_response_bytes then
         return fail(id, { status = 502, message = "Merged catalog exceeds response bound" })
     end
@@ -478,10 +509,7 @@ local function handle_catalog(conf, ctx, message, kind, spec)
         return fail(id, { status = 503, message = "Configuration changed during discovery" })
     end
     routing_publish(conf, key, result)
-    return reply(
-        200,
-        { jsonrpc = "2.0", id = id, result = { [spec.field] = result.catalogs[kind] } }
-    )
+    return reply(200, envelope)
 end
 
 
@@ -516,8 +544,10 @@ local function handle_operation(conf, ctx, message)
         return fail(id, detail or { message = err })
     end
     local server = conf.servers[owner.server]
-    local deadline = ngx_now()
-        + ((server.timeouts or {}).operation_total or conf.timeouts.operation_total)
+    local deadline = math_min(
+        ctx.mcp_deadline,
+        ngx_now() + ((server.timeouts or {}).operation_total or conf.timeouts.operation_total)
+    )
     local init, why, init_detail = transport_initialize(conf, ctx, server, deadline)
     if not init then
         return fail(id, init_detail or { message = why })
@@ -570,14 +600,7 @@ end
 -- @param conf table Validated plugin configuration.
 -- @param ctx table APISIX context shared with auth and upstream phases.
 -- @return integer|nil Phase rejection status, or terminates through the response API.
-function mcp_proxy.access(conf, ctx)
-    if conf.mode == "bridge" then
-        if not ctx.mcp_bridge then
-            return 404
-        end
-        ctx.upstream_id = ctx.mcp_bridge.upstream_id
-        return
-    end
+local function dispatch(conf, ctx)
     if conf.mode == "metadata" then
         if ngx_req_get_method() ~= "GET" then
             ngx.header.Allow = "GET"
@@ -588,10 +611,6 @@ function mcp_proxy.access(conf, ctx)
         return reply(200, meta)
     end
     defaults(conf)
-    if ngx_req_get_method() ~= "POST" then
-        ngx.header.Allow = "POST"
-        return 405
-    end
     local incoming, truncated = ngx_req_get_headers(256)
     if truncated then
         return fail(nil, { status = 431, message = "Too many request headers" })
@@ -609,6 +628,10 @@ function mcp_proxy.access(conf, ctx)
             return fail(nil, { status = 403, message = "Origin is not allowed" })
         end
     end
+    if ngx_req_get_method() ~= "POST" then
+        ngx.header.Allow = "POST"
+        return 405
+    end
     if incoming["mcp-session-id"] then
         return fail(nil, { status = 400, message = "This endpoint uses a stateless MCP profile" })
     end
@@ -621,10 +644,13 @@ function mcp_proxy.access(conf, ctx)
     then
         return fail(nil, { status = 415, message = "Expected application/json" })
     end
-    ngx_req_read_body()
-    local raw = ngx_req_get_body_data()
+    local raw, body_err = core_request_get_body(conf.max_request_bytes, ctx)
     if not raw then
-        return fail(nil, { status = 413, message = "Request body exceeds in-memory limit" })
+        local status = 400
+        if body_err then
+            status = body_err:find("maximum size", 1, true) and 413 or 500
+        end
+        return fail(nil, { status = status, message = "Request body unavailable or too large" })
     end
     if #raw > conf.max_request_bytes then
         return fail(nil, { status = 413, message = "Request body exceeds configured limit" })
@@ -698,5 +724,40 @@ function mcp_proxy.access(conf, ctx)
         end
     end
     return handle_operation(conf, ctx, message)
+end
+
+
+--- Defer public responses until all access policies have run.
+-- Bridge requests still use native APISIX upstream selection.
+-- @param conf table Validated plugin configuration.
+-- @param ctx table Request context shared with subsequent plugins.
+-- @return integer|nil Rejection status for an invalid bridge ticket.
+function mcp_proxy.access(conf, ctx)
+    if conf.mode == "bridge" then
+        if not ctx.mcp_bridge then
+            return 404
+        end
+        ctx.upstream_id = ctx.mcp_bridge.upstream_id
+        return
+    end
+    defaults(conf)
+    ctx.mcp_deadline = ngx_now() + conf.timeouts.request_total
+    ctx.mcp_response_limit = conf.max_response_bytes
+    ctx.bypass_nginx_upstream = true
+end
+
+
+--- Execute public MCP only after access, or prepare the native bridge.
+-- before_proxy policies must have a higher priority than this response producer.
+-- @param conf table Validated plugin configuration.
+-- @param ctx table Request context after access policies have completed.
+-- @return integer|nil Rejection status or response termination.
+function mcp_proxy.before_proxy(conf, ctx)
+    if conf.mode == "bridge" then
+        return prepare_bridge(conf, ctx)
+    end
+    if ctx.mcp_deadline then
+        return dispatch(conf, ctx)
+    end
 end
 return mcp_proxy

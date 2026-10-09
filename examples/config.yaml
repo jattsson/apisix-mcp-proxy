@@ -15,8 +15,8 @@ nginx_config:
     custom_lua_shared_dict:
       mcp_proxy_tickets: 8m
   http_server_configuration_snippet: |
+    # Required for prompt SSE delivery through the native bridge.
     proxy_buffering off;
-    client_body_buffer_size 8m;
     lua_check_client_abort on;
 # Merge with your existing plugin list.
 plugins:

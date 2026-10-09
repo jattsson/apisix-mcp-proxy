@@ -15,8 +15,8 @@ config = {
     'deployment': {'role': 'data_plane', 'role_data_plane': {'config_provider': 'yaml'}},
     'nginx_config': {'worker_processes': 2, 'worker_cpu_affinity': '0', 'error_log_level': 'warn',
         'http': {'real_ip_header':'X-Forwarded-For','real_ip_recursive':'on','real_ip_from':['127.0.0.1','10.231.241.10'],'custom_lua_shared_dict': {'mcp_proxy_tickets': '8m'}},
-        'http_server_configuration_snippet': 'proxy_buffering off;\nclient_body_buffer_size 8m;\nlua_check_client_abort on;'},
-    'plugins': ['mcp-proxy', 'test-auth', 'ip-restriction', 'openid-connect', 'redirect'], 'stream_plugins': []
+        'http_server_configuration_snippet': 'proxy_buffering off;\nclient_body_buffer_size 1k;\nlua_check_client_abort on;'},
+    'plugins': ['mcp-proxy', 'test-auth', 'ip-restriction', 'openid-connect', 'redirect', 'serverless-post-function', 'serverless-pre-function'], 'stream_plugins': []
 }
 metadata = {'resource': 'https://gateway.example.test:9443/mcp/farm',
     'metadata_url': 'https://gateway.example.test:9443/.well-known/oauth-protected-resource/mcp/farm',
@@ -99,6 +99,23 @@ for policy in ('pass', 'node', 'rewrite'):
     variant['servers'][0]['upstream_id'] = upstream_id
     routes.append({'id':upstream_id,'uri':'/mcp/'+upstream_id,'hosts':public_hosts,
         'priority':20001,'plugins':{'test-auth':{},'mcp-proxy':variant}})
+# Regression routes isolate policy ordering and aggregate budgets.
+for phase, plugin_name in [('access','serverless-post-function'),('before_proxy','serverless-pre-function')]:
+    routes.append({'id':'deny-'+phase,'uri':'/mcp/deny-'+phase,'plugins':{
+        'test-auth':{},'mcp-proxy':copy.deepcopy(single),
+        plugin_name:{'phase':phase,'functions':['return function() return 403 end']}}})
+for name, changes in [('bytes',{'max_discovery_bytes':2048}), ('parallel-bytes',{'max_discovery_bytes':2048}),
+    ('entries',{'max_discovery_entries':1}), ('request-deadline',{'timeouts':{'request_total':1},'max_concurrency':1}),
+    ('short-ttl',{'routing_ttl':1})]:
+    variant=copy.deepcopy(plugin if name=='parallel-bytes' else single)
+    variant.update(changes)
+    routes.append({'id':name,'uri':'/mcp/'+name,'plugins':{'test-auth':{},'mcp-proxy':variant}})
+routes.append({'id':'schema-regression','uri':'/schema-regression','plugins':{
+    'serverless-pre-function':{'phase':'access','functions':[
+        'return function() local p=require("apisix.plugins.mcp-proxy"); '
+        'for _, v in ipairs({false,42,"invalid", require("cjson").null}) do '
+        'local ok, valid=pcall(p.check_schema,{servers={v}}); '
+        'if not ok or valid then return 500 end end; return 200 end']}}})
 (out / 'config.yaml').write_text(json.dumps(config, indent=2))
 (out / 'apisix.yaml').write_text(json.dumps(standalone, indent=2) + '\n#END\n')
 print(out)

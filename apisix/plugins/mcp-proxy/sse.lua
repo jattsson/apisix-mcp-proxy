@@ -43,7 +43,13 @@ function sse.feed(state, chunk, emit)
         end
         local ending = chunk:find("[\r\n]", position)
         local piece = chunk:sub(position, ending and ending - 1 or #chunk)
-        state.pieces[#state.pieces + 1] = piece
+        local count = #state.pieces
+        if count > 0 and #state.pieces[count] + #piece <= 1024 then
+            state.pieces[count] = state.pieces[count] .. piece
+
+        else
+            state.pieces[count + 1] = piece
+        end
         state.line_size = state.line_size + #piece
         if state.line_size > state.limit then
             return nil, "SSE line exceeds response bound"
@@ -59,13 +65,15 @@ function sse.feed(state, chunk, emit)
         if line == "" then
             if #state.data > 0 then
                 local raw = table_concat(state.data, "\n")
-                local message = json_decode(raw)
-                if not message then
-                    return nil, "Invalid JSON in SSE event"
-                end
-                local ok, why = emit(message, raw)
-                if not ok then
-                    return nil, why
+                if raw ~= "" then
+                    local message = json_decode(raw)
+                    if not message then
+                        return nil, "Invalid JSON in SSE event"
+                    end
+                    local ok, why = emit(message, raw)
+                    if not ok then
+                        return nil, why
+                    end
                 end
             end
             state.data = {}
@@ -78,7 +86,7 @@ function sse.feed(state, chunk, emit)
                 value = ""
             end
             if name == "data" then
-                state.size = state.size + #value
+                state.size = state.size + #value + 1
                 if state.size > state.limit then
                     return nil, "SSE event exceeds response bound"
                 end

@@ -367,7 +367,7 @@ class GatewayTests(unittest.TestCase):
             self.assertEqual(send('tools/list',{})[0],200)
             subprocess.run(['docker','compose','stop','--timeout','1','java-b'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
             status,body=send('tools/list',{})
-            self.assertEqual(status,502,body)
+            self.assertIn(status,(502,504),body)
             self.assertNotIn('result',body)
             status,body=send('tools/call',{'name':'echo_a'})
             self.assertEqual(status,200,body)
@@ -468,6 +468,79 @@ class GatewayTests(unittest.TestCase):
                 'MCP-Protocol-Version':'2026-07-28'})
         self.assertEqual(status,404,body)
         self.assertEqual(json.loads(body)['error']['code'],-32601)
+
+    def test_35_late_policy_denies_before_any_upstream_work(self):
+        for phase in ('access','before_proxy'):
+            for method,params in [('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'test','version':'1'}}),('tools/list',{}),('tools/call',{'name':'echo_a'})]:
+                stats(True)
+                status,_,body=request(method,params,path='/mcp/deny-'+phase)
+                self.assertEqual(status,403,(phase,method,body))
+                self.assertEqual(stats()['calls'],[])
+
+    def test_36_aggregate_bounds_apply_to_cold_operations(self):
+        for path,headers in [('/mcp/bytes',{'X-Fixture-Mode':'many-pages'}),('/mcp/parallel-bytes',{'X-Fixture-Mode':'many-pages'}),('/mcp/entries',{})]:
+            cases=[('tools/list',{}),('tools/call',{'name':'echo_a'})]
+            if path=='/mcp/entries':
+                cases.append(('resources/read',{'uri':'fixture://adversary/unlisted'}))
+            for method,params in cases:
+                stats(True)
+                status,_,body=request(method,params,path=path,headers=headers)
+                self.assertEqual(status,502,body)
+                self.assertIn('Aggregate discovery',json.loads(body)['error']['message'])
+                calls=stats()['calls']
+                self.assertLessEqual(sum(c['method']=='tools/list' for c in calls),4)
+                self.assertFalse(any(c['method']=='tools/call' for c in calls))
+
+    def test_37_spooled_and_chunked_request_bodies(self):
+        args={'padding':'x'*32768}
+        status,_,body=request('tools/call',{'name':'echo_a','arguments':args},path='/mcp/single')
+        self.assertEqual(status,200,body)
+        self.assertEqual(json.loads(body)['result']['structuredContent']['arguments'],args)
+        raw=json.dumps({'jsonrpc':'2.0','id':7,'method':'tools/call','params':{'name':'echo_a','arguments':args}}).encode()
+        for payload,expected in [(raw,200),(b'x'*1048577,413)]:
+            connection=http.client.HTTPConnection('127.0.0.1',19080,timeout=20)
+            try:
+                connection.request('POST','/mcp/single',iter([payload[i:i+1024] for i in range(0,len(payload),1024)]),
+                    {'Authorization':'Bearer alice','Content-Type':'application/json','MCP-Protocol-Version':'2025-11-25'},encode_chunked=True)
+                response=connection.getresponse()
+                self.assertEqual(response.status,expected,response.read())
+            finally:
+                connection.close()
+        self.assertEqual(request(raw=b'x'*1048577,path='/mcp/single')[0],413)
+
+    def test_38_origin_media_timeout_and_schema(self):
+        connection=http.client.HTTPConnection('127.0.0.1',19080,timeout=10)
+        try:
+            connection.request('GET','/mcp/single',headers={'Authorization':'Bearer alice','Origin':'https://evil.test'})
+            response=connection.getresponse()
+            self.assertEqual(response.status,403,response.read())
+        finally:
+            connection.close()
+        self.assertEqual(request(headers={'X-Fixture-Mode':'media-case'})[0],200)
+        self.assertEqual(request(headers={'X-Fixture-Mode':'504'})[0],504)
+        self.assertEqual(request(headers={'X-Fixture-Mode':'bad-execution'})[0],502)
+        with urllib.request.urlopen(BASE+'/schema-regression') as response:
+            self.assertEqual(response.status,200)
+
+    def test_39_public_deadline_includes_discovery(self):
+        start=time.monotonic()
+        status,_,body=request('tools/call',{'name':'echo_a'},path='/mcp/request-deadline',headers={'X-Fixture-Mode':'slow'})
+        self.assertEqual(status,504,body)
+        self.assertLess(time.monotonic()-start,2.5)
+
+    def test_40_catalog_ttl_is_not_extended_by_other_kinds(self):
+        headers={'X-Tenant':'ttl-regression'}
+        # Populate both workers, then refresh only tools while prompts age out.
+        for _ in range(12):
+            self.assertEqual(request('prompts/list',path='/mcp/short-ttl',headers=headers)[0],200)
+        time.sleep(0.6)
+        for _ in range(12):
+            self.assertEqual(request('tools/list',path='/mcp/short-ttl',headers=headers)[0],200)
+        time.sleep(0.6)
+        stats(True)
+        status,_,body=request('prompts/get',{'name':'prompt'},path='/mcp/short-ttl',headers=headers)
+        self.assertEqual(status,200,body)
+        self.assertTrue(any(c['method']=='prompts/list' for c in stats()['calls']))
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
