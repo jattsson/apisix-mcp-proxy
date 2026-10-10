@@ -33,3 +33,7 @@ history before changing visibility; a clean current tree does not clean history.
 Tag only the final reviewed release commit. Never move a published release tag;
 use a new patch version for corrections. Runtime dependencies are supplied by the
 supported APISIX distribution rather than bundled in the release archive.
+
+See [APISIX compatibility](compatibility.md) for the feature-based minimum and
+verified versions. A newer APISIX release is not implicitly certified by a plugin
+patch release.

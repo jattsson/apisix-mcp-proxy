@@ -49,10 +49,22 @@ adds Lua files to APISIX; no separate proxy process is required.
 
 ## Versions and protocol profile
 
-The supported runtime is **Apache APISIX 3.19.0** with APISIX-Runtime
-extensions. Both client-facing and upstream MCP connections use the
-**2025-11-25 stateless Streamable HTTP** profile. See the
-[verification report](docs/verification.md) for the tested images and fixtures.
+The minimum APISIX version for the **full documented feature set is 3.19.0**,
+with APISIX-Runtime extensions. The compatibility target is **APISIX 3.19+
+within the 3.x series**, not a dependency on whichever release is latest.
+**3.19.0 is the fully verified version**; newer versions must pass the same suite
+before being added to the verified list. APISIX 4.x is not covered by this claim.
+
+Basic MCP operation also runs on older versions: 3.18.0 passed 39 of 40 tests,
+but accepted an upstream certificate signed by the wrong CA with the documented
+configuration. Per-upstream HTTP TLS verification (`tls.verify` / `tls.ca_certs`)
+requires 3.19.0. Do not use a blanket “all APISIX 3.x” compatibility claim.
+See the [version compatibility matrix](docs/compatibility.md) for older-version
+results, feature boundaries and reproducible tests.
+
+Both client-facing and upstream MCP connections use the **2025-11-25 stateless
+Streamable HTTP** profile. See the [verification report](docs/verification.md)
+for the tested images and fixtures.
 
 Connections use `initialize` followed by `notifications/initialized`.
 An authenticated, structurally valid `server/discover` request
