@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# GitHub App access is configured separately, scoped to this repository.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  in_progress_fortune: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+  path_filters:
+    - "!docs/test-results.txt"
+    - "!fixtures/java/gradle.lockfile"
+  path_instructions:
+    - path: "**/*.lua"
+      instructions: |
+        Follow docs/lua-style.md: combine LuaRocks conventions with APISIX,
+        using APISIX precedence at conflicts (four spaces, 100 columns).
+        Check typed function contracts, side effects, failure returns and cleanup.
+        Prefer actionable correctness findings over repeating formatter output.
+        Runtime code must remain Lua 5.1/OpenResty compatible and pure Lua.
+    - path: "apisix/plugins/**"
+      instructions: |
+        Review the supported stateless MCP 2025-11-25 profile documented in README.md.
+        Preserve caller bearer identity and tenant context. Check issuer/audience
+        boundaries, one-use bridge tickets, trusted forwarding headers and isolation
+        of worker-local routing snapshots. Never cache user catalogs globally.
+        Check bounded discovery, pagination, deadlines, concurrency and JSON/SSE size
+        limits. Preserve null/false/zero and empty arrays versus objects. Verify
+        response correlation and client-abort cleanup. Do not retry user operations.
+        Keep APISIX native balancing, health checks, Host/SNI and TLS/mTLS verification.
+        Treat server/discover 404/-32601 as authenticated compatibility fallback,
+        not evidence of support for a newer MCP revision.
+    - path: "tests/**"
+      instructions: |
+        Prefer regression cases that exercise behavior in the real APISIX runtime.
+        Check that auth, protocol and routing fixes include meaningful negative
+        cases. Keep local fixture results separate from deployed/client evidence.
+        Do not require Java or Python in the installed Lua plugin runtime.
+    - path: "examples/**"
+      instructions: |
+        Check documented APISIX schemas, route/upstream references and installation
+        assumptions. Require correct issuer/audience checks on public MCP routes,
+        public protected-resource metadata and the reserved ticket-protected bridge.
+        Use generic example addresses and never include real credentials.
+    - path: "**/*.md"
+      instructions: |
+        Keep purpose and usage clear. Distinguish local automated tests, reported
+        deployment evidence and user-confirmed client behavior. Do not broaden
+        compatibility claims beyond docs/verification.md. Check installation and
+        release links and keep runtime dependencies separate from test tooling.
