@@ -1,5 +1,12 @@
 # Verification report
 
+## APISIX compatibility study — 2026-10-10
+
+Unmodified v0.1.1 was also exercised on APISIX 3.12.0 and 3.18.0.
+See [the compatibility matrix](compatibility.md) for complete results and the
+feature-based minimum. These older-version experiments do not broaden the
+verified full-profile claim beyond 3.19.0.
+
 ## Review fixes — 2026-10-09
 
 The final local review run passed **40 native APISIX integration tests** in
