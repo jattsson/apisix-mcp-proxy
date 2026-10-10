@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-archive = root / ".test/release/apisix-mcp-proxy-0.1.0.tar.gz"
+archive = root / ".test/release/apisix-mcp-proxy-0.1.1.tar.gz"
 subprocess.run([sys.executable, str(root / "scripts/package.py")], check=True)
 first = archive.read_bytes()
 subprocess.run([sys.executable, str(root / "scripts/package.py")], check=True)
@@ -17,11 +17,11 @@ with tempfile.TemporaryDirectory() as directory:
     target = Path(directory)
     with tarfile.open(archive) as tar:
         names = tar.getnames()
-        assert all(n.startswith("apisix-mcp-proxy-0.1.0/") for n in names)
+        assert all(n.startswith("apisix-mcp-proxy-0.1.1/") for n in names)
         assert not any(part in n.split("/") for n in names
                        for part in (".git", ".test", "fixtures", "tests"))
         tar.extractall(target, filter="data")
-    source = target / "apisix-mcp-proxy-0.1.0"
+    source = target / "apisix-mcp-proxy-0.1.1"
     destination = target / "installed"
     subprocess.run(["bash", str(source / "scripts/install.sh"), str(destination)], check=True)
     lua = list((source / "apisix").rglob("*.lua"))

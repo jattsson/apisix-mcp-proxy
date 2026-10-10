@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-10-09
 
 - Defer MCP dispatch until all access policies have run.
 - Bound aggregate discovery bytes/entries and cached ownership size; expire catalog kinds independently.

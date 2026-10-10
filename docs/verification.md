@@ -13,8 +13,8 @@ limits across parallel servers and multiple catalog kinds on cold operations,
 spooled/chunked bodies, malformed server schema and separate catalog TTLs.
 Existing TLS/mTLS, certificate rotation and early SSE progress tests remain green.
 See [review decisions](review-2026-10-09.md) for deferred items and operational
-caveats. GitHub Actions verifies the final PR commit. These changes have not been
-released or tested with production clients.
+caveats. GitHub Actions verifies the final PR commit. These fixes are included in 0.1.1. Production-client verification of this
+patch remains outstanding.
 
 ## Original release verification — 2026-10-08
 
