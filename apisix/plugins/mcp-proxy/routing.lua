@@ -26,6 +26,8 @@ local template_compile = template.compile
 local template_is_match = template.is_match
 local upstream_get_by_id = upstream.get_by_id
 
+local ngx_now = ngx.now
+local json_encode = json.encode
 local routing = {}
 
 
@@ -53,19 +55,27 @@ end
 
 
 --- Publish ownership maps atomically to the worker-local bounded cache.
--- Preserves unrelated catalog kinds and refreshes the configured expiry.
+-- Preserves only unexpired unrelated kinds without extending their lifetimes.
+-- Caps serialized ownership at 256 KiB per fingerprint (256 worker-local entries).
 -- @param conf table Configuration containing routing_ttl.
 -- @param key string Fingerprint computed before discovery.
 -- @param result table Successful discovery result containing routing maps.
 -- @return nil Mutates the worker-local cache only.
 function routing.publish(conf, key, result)
     local old = cache:get(key) or {}
-    local updated = {}
-    for kind, owners in pairs(old) do
-        updated[kind] = owners
+    local updated, now = {}, ngx_now()
+    for kind, entry in pairs(old) do
+        if entry.expires > now then
+            updated[kind] = entry
+        end
     end
     for kind, owners in pairs(result.routing) do
-        updated[kind] = owners
+        updated[kind] = { owners = owners, expires = now + conf.routing_ttl }
+    end
+    local encoded = json_encode(updated)
+    if not encoded or #encoded > 262144 then
+        cache:delete(key)
+        return
     end
     cache:set(key, updated, conf.routing_ttl)
 end
@@ -124,7 +134,13 @@ end
 -- @return table|nil Owner; on failure nil, diagnostic string and HTTP failure metadata.
 function routing.resolve(conf, ctx, kind, name)
     local key = routing.key(conf, ctx)
-    local owner, err = choose(conf, cache:get(key), kind, name)
+    local snapshot = {}
+    for catalog, entry in pairs(cache:get(key) or {}) do
+        if entry.expires > ngx_now() then
+            snapshot[catalog] = entry.owners
+        end
+    end
+    local owner, err = choose(conf, snapshot, kind, name)
     if err then
         return nil, err, { status = 400, code = -32602, message = err }
     end

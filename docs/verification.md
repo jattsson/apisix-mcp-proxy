@@ -1,4 +1,22 @@
-# Verification report — 2026-10-08
+# Verification report
+
+## Review fixes — 2026-10-09
+
+The final local review run passed **40 native APISIX integration tests** in
+64.895 seconds and **28 OpenResty helper assertions**, plus independent JSON type
+and numeric-boundary checks. Lua formatting, function contracts and lint passed
+for all 11 owned Lua files with zero warnings. The tightened empty-data SSE
+bound was also checked separately after the full run.
+
+New coverage includes phase-policy rejection with zero upstream calls, aggregate
+limits across parallel servers and multiple catalog kinds on cold operations,
+spooled/chunked bodies, malformed server schema and separate catalog TTLs.
+Existing TLS/mTLS, certificate rotation and early SSE progress tests remain green.
+See [review decisions](review-2026-10-09.md) for deferred items and operational
+caveats. GitHub Actions verifies the final PR commit. These fixes are included in 0.1.1. Production-client verification of this
+patch remains outstanding.
+
+## Original release verification — 2026-10-08
 
 The final local run of `bash scripts/test.sh` passed **34 integration tests** in
 65.045 seconds, plus **19 OpenResty helper assertions** and independent Python

@@ -22,7 +22,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         for key, value in (headers or {}).items():
             self.send_header(key, value)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', ' Application/JSON ; charset=utf-8' if self.headers.get('X-Fixture-Mode')=='media-case' else 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -46,6 +46,8 @@ class Handler(BaseHTTPRequestHandler):
         variant = self.headers.get('X-Fixture-Mode', '')
         with lock:
             state['calls'].append({'method': method, 'headers': dict(self.headers), 'body': message})
+        if variant == '504':
+            return self.send(504, {})
         if variant == '401':
             return self.send(401, {}, {'WWW-Authenticate': 'Basic realm="a,b", Bearer error="invalid_token", error_description="expired, renew"'})
         if variant == '403':
@@ -83,6 +85,11 @@ class Handler(BaseHTTPRequestHandler):
                     result = {'tools': [{'name': ('second' if page else 'echo'), 'inputSchema': {'type': 'object', 'properties': {}, 'required': []}, 'outputSchema': {'type': 'object', 'properties': {}}}]}
                     if not page or variant == 'cursor-loop':
                         result['nextCursor'] = 'p2'
+                    if variant == 'many-pages':
+                        n=int(page or 0)
+                        result={'tools':[{'name':'item-'+str(n),'description':'x'*600,'inputSchema':{}}], 'nextCursor':str(n+1)}
+                    if variant == 'bad-execution':
+                        result['tools'][0]['execution']=42
                     if variant == 'task':
                         result['tools'][0]['execution'] = {'taskSupport': 'required'}
                     if variant == 'bad-catalog':
@@ -131,7 +138,7 @@ class Handler(BaseHTTPRequestHandler):
         if variant=='rpc-error' and method=='tools/call':
             response={'jsonrpc':'2.0','id':message['id'],'error':{'code':-32602,'message':'Fixture protocol error','data':{'kind':'test'}}}
         if variant in ('sse','sse-wait'):
-            events = ': comment\r\n\r\ndata: ' + json.dumps({'jsonrpc': '2.0', 'method': 'notifications/progress', 'params': {'progressToken': 7, 'progress': 1}}) + '\r\n\r\n'
+            events = ': comment\r\nid: primer\r\nretry: 1000\r\ndata:\r\n\r\ndata: ' + json.dumps({'jsonrpc': '2.0', 'method': 'notifications/progress', 'params': {'progressToken': 7, 'progress': 1}}) + '\r\n\r\n'
             events += 'event: message\ndata: ' + json.dumps(response, indent=1).replace('\n', '\ndata: ') + '\n\n'
             data = events.encode()
             self.send_response(200)

@@ -24,7 +24,7 @@ def build():
     version = git("show", "HEAD:VERSION").decode().strip()
     if version != (ROOT / "VERSION").read_text().strip():
         raise SystemExit("Commit VERSION before packaging")
-    if version != "0.1.0":
+    if version != "0.1.1":
         raise SystemExit("Review packaging for the new release version")
     prefix = "apisix-mcp-proxy-" + version
     source = git("archive", "--format=tar", "HEAD", "--", *FILES)

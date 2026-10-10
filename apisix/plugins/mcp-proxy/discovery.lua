@@ -177,8 +177,16 @@ local function list(conf, ctx, server, init, kind, deadline)
             if kind == "tools" and not json_is_object(item.inputSchema) then
                 return nil, failure("Invalid tool schema")
             end
+            if item.execution ~= nil and not json_is_object(item.execution) then
+                return nil, failure("Invalid tool execution metadata")
+            end
             if item.execution and item.execution.taskSupport == "required" then
                 return nil, failure("Tool requires unsupported task execution")
+            end
+            ctx.mcp_discovery_entries = (ctx.mcp_discovery_entries or 0) + 1
+            if ctx.mcp_discovery_entries > conf.max_discovery_entries then
+                ctx.mcp_discovery_failed = true
+                return nil, failure("Aggregate discovery entry limit exceeded")
             end
             items[#items + 1] = item
             if #items > conf.max_entries then
@@ -217,6 +225,7 @@ function discovery.fetch(conf, ctx, wanted)
                 (server.timeouts and server.timeouts.discovery_total)
                 or conf.timeouts.discovery_total
             )
+        deadline = math_min(deadline, ctx.mcp_deadline)
         local init, why, init_detail = transport_initialize(conf, ctx, server, deadline)
         if not init then
             return nil, why, init_detail
@@ -231,7 +240,9 @@ function discovery.fetch(conf, ctx, wanted)
         end
         return result
     end
+    ctx.mcp_discovering = true
     local results, err, detail = discovery.parallel(conf, fetch_server)
+    ctx.mcp_discovering = false
     if not results then
         return nil, err, detail
     end

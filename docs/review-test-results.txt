@@ -1,0 +1,51 @@
+test_01_metadata_auth_no_default_upstream (test_gateway.GatewayTests.test_01_metadata_auth_no_default_upstream) ... ok
+test_02_initialize (test_gateway.GatewayTests.test_02_initialize) ... ok
+test_03_catalog_alias_pagination (test_gateway.GatewayTests.test_03_catalog_alias_pagination) ... ok
+test_04_cold_operation_roundtrip (test_gateway.GatewayTests.test_04_cold_operation_roundtrip) ... ok
+test_05_hidden_original (test_gateway.GatewayTests.test_05_hidden_original) ... ok
+test_06_auth_error_classification (test_gateway.GatewayTests.test_06_auth_error_classification) ... ok
+test_07_no_partial_invalid_catalog (test_gateway.GatewayTests.test_07_no_partial_invalid_catalog) ... ok
+test_08_fragmented_sse (test_gateway.GatewayTests.test_08_fragmented_sse) ... ok
+test_09_no_standalone_sse (test_gateway.GatewayTests.test_09_no_standalone_sse) ... ok
+test_10_compression_and_invalid_json (test_gateway.GatewayTests.test_10_compression_and_invalid_json) ... ok
+test_11_route_isolation (test_gateway.GatewayTests.test_11_route_isolation) ... ok
+test_12_real_java_sdk (test_gateway.GatewayTests.test_12_real_java_sdk) ... ok
+test_13_tls_and_mtls (test_gateway.GatewayTests.test_13_tls_and_mtls) ... ok
+test_14_real_oidc_validation (test_gateway.GatewayTests.test_14_real_oidc_validation) ... ok
+test_15_no_write_retries (test_gateway.GatewayTests.test_15_no_write_retries) ... ok
+test_16_parallel_and_limit (test_gateway.GatewayTests.test_16_parallel_and_limit) ... ok
+test_17_timeout_and_collision (test_gateway.GatewayTests.test_17_timeout_and_collision) ... ok
+test_18_headers_and_error_result (test_gateway.GatewayTests.test_18_headers_and_error_result) ... ok
+test_19_warm_owner_only (test_gateway.GatewayTests.test_19_warm_owner_only) ... ok
+test_20_capabilities_and_resource_blocks (test_gateway.GatewayTests.test_20_capabilities_and_resource_blocks) ... ok
+test_21_balancing_and_health (test_gateway.GatewayTests.test_21_balancing_and_health) ... ok
+test_22_instances_and_workers (test_gateway.GatewayTests.test_22_instances_and_workers) ...  Container mcp-proxy-tests-gateway-2-1 Restarting
+ Container mcp-proxy-tests-gateway-2-1 Started
+ok
+test_23_https_reverse_proxy_context (test_gateway.GatewayTests.test_23_https_reverse_proxy_context) ... ok
+test_24_generation_during_discovery (test_gateway.GatewayTests.test_24_generation_during_discovery) ... ok
+test_25_identity_isolation_and_empty_arrays (test_gateway.GatewayTests.test_25_identity_isolation_and_empty_arrays) ... ok
+test_26_sse_progress_before_result (test_gateway.GatewayTests.test_26_sse_progress_before_result) ... ok
+test_27_certificate_reference_rotation (test_gateway.GatewayTests.test_27_certificate_reference_rotation) ... ok
+test_28_ip_policy_before_proxy (test_gateway.GatewayTests.test_28_ip_policy_before_proxy) ... ok
+test_29_no_stale_catalog_and_warm_survivor (test_gateway.GatewayTests.test_29_no_stale_catalog_and_warm_survivor) ...  Container mcp-proxy-tests-java-b-1 Stopping
+ Container mcp-proxy-tests-java-b-1 Stopped
+ Container mcp-proxy-tests-java-b-1 Starting
+ Container mcp-proxy-tests-java-b-1 Started
+ok
+test_30_upstream_jsonrpc_error (test_gateway.GatewayTests.test_30_upstream_jsonrpc_error) ... ok
+test_31_client_abort_closes_upstream_stream (test_gateway.GatewayTests.test_31_client_abort_closes_upstream_stream) ... ok
+test_32_bridge_routing_multiple_hosts_and_host_policies (test_gateway.GatewayTests.test_32_bridge_routing_multiple_hosts_and_host_policies) ... ok
+test_33_discovery_fallback_and_strict_version_boundary (test_gateway.GatewayTests.test_33_discovery_fallback_and_strict_version_boundary) ... ok
+test_34_discovery_fallback_requires_oidc_authentication (test_gateway.GatewayTests.test_34_discovery_fallback_requires_oidc_authentication) ... ok
+test_35_late_policy_denies_before_any_upstream_work (test_gateway.GatewayTests.test_35_late_policy_denies_before_any_upstream_work) ... ok
+test_36_aggregate_bounds_apply_to_cold_operations (test_gateway.GatewayTests.test_36_aggregate_bounds_apply_to_cold_operations) ... ok
+test_37_spooled_and_chunked_request_bodies (test_gateway.GatewayTests.test_37_spooled_and_chunked_request_bodies) ... ok
+test_38_origin_media_timeout_and_schema (test_gateway.GatewayTests.test_38_origin_media_timeout_and_schema) ... ok
+test_39_public_deadline_includes_discovery (test_gateway.GatewayTests.test_39_public_deadline_includes_discovery) ... ok
+test_40_catalog_ttl_is_not_extended_by_other_kinds (test_gateway.GatewayTests.test_40_catalog_ttl_is_not_extended_by_other_kinds) ... ok
+
+----------------------------------------------------------------------
+Ran 40 tests in 64.895s
+
+OK
