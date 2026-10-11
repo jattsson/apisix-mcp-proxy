@@ -422,8 +422,9 @@ Output order is deterministic, and the merged response has no `nextCursor`.
 Routing snapshots contain only ownership/name/template information, not catalog
 contents or tokens. They are held in a bounded 256-entry worker LRU and keyed by
 SHA-256 of the route/config generation, protocol, upstream object generations and
-all forwarded request headers, including Authorization. Representation framing
-and hop-by-hop headers are excluded. A successful listing atomically replaces its
+all forwarded request headers, including Authorization, plus the verified client IP
+and effective host, scheme and forwarding context supplied by the bridge.
+Representation framing and hop-by-hop headers are excluded. A successful listing atomically replaces its
 catalog's ownership map; failed aggregation never publishes a subset. Old in-flight
 discoveries retain old generation keys, which new configurations cannot read.
 Cold workers, other instances and expired/missing owners perform fresh discovery
