@@ -257,7 +257,12 @@ function transport.request(conf, ctx, server, message, deadline, emit)
         close()
         return true
     end
-    local media = (response.headers["Content-Type"] or ""):lower():match("^%s*([^;%s]+)")
+    local content_type = response.headers["Content-Type"]
+    if type(content_type) ~= "string" then
+        close()
+        return nil, request_failure(502, "Missing or repeated upstream Content-Type")
+    end
+    local media = content_type:lower():match("^%s*([^;%s]+)")
     if media ~= "application/json" and media ~= "text/event-stream" then
         close()
         return nil, request_failure(502, "Unexpected upstream response media type")

@@ -14,4 +14,5 @@ done
 curl -fsS http://127.0.0.1:19080/.well-known/oauth-protected-resource/mcp/farm >/dev/null
 docker compose exec -T gateway /usr/local/openresty/bin/resty -V
 docker compose exec -T gateway /usr/local/openresty/bin/resty -I /opt/mcp-proxy /opt/test-suite/unit/helpers.lua | python3 tests/unit/verify.py
+python3 tests/unit/regressions.py
 python3 -m unittest discover -s tests/integration -v 2>&1 | tee .test/integration-results.txt

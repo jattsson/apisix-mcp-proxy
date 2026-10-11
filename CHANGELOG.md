@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Reject missing or repeated upstream Content-Type with controlled cleanup and HTTP 502.
+- Isolate routing snapshots by verified client IP and effective bridge request context.
+
 ## 0.1.1 - 2026-10-10
 
 - Defer MCP dispatch until all access policies have run.

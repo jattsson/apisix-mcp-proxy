@@ -31,7 +31,7 @@ local json_encode = json.encode
 local routing = {}
 
 
---- Hash configuration generations, upstream identities and forwarded headers.
+--- Hash configuration, upstreams, client address and forwarded request context.
 -- Raw credentials participate in the digest but are not retained in the cache.
 -- @param conf table Validated route configuration.
 -- @param ctx table Request context including captured incoming headers.
@@ -50,6 +50,15 @@ function routing.key(conf, ctx)
         end
     end
     digest:update(json_canonical(headers_forward(ctx.mcp_headers)))
+    -- The bridge supplies these values even when no incoming header contains them.
+    -- Client ports are ephemeral connection details, not reusable policy identity.
+    digest:update(json_canonical({
+        client_ip = ctx.var.remote_addr,
+        host = ctx.var.http_host or ctx.var.host,
+        forwarded_proto = ctx.mcp_headers["x-forwarded-proto"] or ctx.var.scheme,
+        forwarded_host = ctx.mcp_headers["x-forwarded-host"] or ctx.var.host,
+        forwarded_port = ctx.mcp_headers["x-forwarded-port"] or ctx.var.server_port,
+    }))
     return resty_string_to_hex(digest:final())
 end
 
