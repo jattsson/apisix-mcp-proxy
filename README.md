@@ -14,6 +14,38 @@ them available through the same gateway as your REST APIs. REST and MCP routes
 can share an identity provider and realm, with audiences and permissions
 configured for each interface.
 
+## Feature support
+
+The plugin supports the **MCP 2025-11-25 stateless Streamable HTTP profile**.
+Core tool listing and invocation are supported; tools that require tasks,
+sampling or elicitation are not compatible with this profile.
+
+| Feature | Support | Behavior and limits |
+|---|---|---|
+| Tool discovery (`tools/list`) | Supported | Merges catalogs, follows upstream pagination, and applies aliases and hiding rules. Returns one bounded catalog; client-supplied cursors are not supported. |
+| Tool invocation (`tools/call`) | Supported | Routes to the owning backend. Forwards tool results, `isError` and JSON-RPC errors without retrying the operation. |
+| Tool metadata and result content | Forwarded | Preserves definition fields such as schemas, annotations and icons, and result content such as text, images, audio and structured content. The plugin does not interpret those content types or validate results against tool schemas. |
+| Progress notifications | Supported | Forwards `notifications/progress` during an operation's SSE POST response. |
+| Prompts (`prompts/list`, `prompts/get`) | Supported | Merges catalogs, applies aliases/hiding and routes retrieval to the owner. |
+| Resources (`resources/list`, `resources/read`) | Supported | Lists and reads resources with a unique discovered owner; supports configured hiding rules. Resource URIs are not rewritten. |
+| Resource templates (`resources/templates/list`) | Limited | Supports simple scalar `{variable}` expressions with additional bounds. Other RFC 6570 forms are rejected; see the [resource contract](#resource-contract). |
+| Initialization and ping | Supported | Negotiates 2025-11-25 and advertises the supported tools, prompts and resources capabilities. |
+| JSON and SSE transport | Supported | Streamable HTTP POST with JSON or streamed SSE responses. Compressed requests and upstream responses are rejected. Request/response size and timeout limits apply. |
+| Catalog change notifications | Not supported | No `listChanged` notifications. Clients must list again to discover changes. |
+| Resource subscriptions and update notifications | Not supported | No `resources/subscribe`, `resources/unsubscribe` or subscription stream. |
+| Tasks / asynchronous jobs | Not supported | Task requests are rejected. A tool declaring tasks as required causes catalog discovery to fail. |
+| Sampling, elicitation and roots | Not supported | No server-to-client request forwarding. Tools requiring these interactions are incompatible. |
+| Argument completion (`completion/complete`) | Not supported | No completion for prompt arguments or resource templates. |
+| Protocol cancellation | Not supported | `notifications/cancelled` receives HTTP 202 but does not cancel another request. Client disconnect cleanup does not roll back backend work. |
+| Persistent sessions and stream resumption | Not supported | No session IDs, standalone GET SSE stream or event replay. Session-requiring backends are rejected. |
+| Legacy HTTP+SSE and stdio | Not supported | Backends must expose the supported Streamable HTTP profile. |
+
+Support describes gateway behavior, not certification of every MCP client or
+content type. See [test and development](#test-and-development) for verification
+coverage, and [error mapping and unsupported features](#error-mapping-and-unsupported-features)
+for failure behavior. Sharing an Upstream with a REST Service does not inherit
+that Service's plugins; configure the public MCP route's authentication and policies.
+
 ## How it works
 
 ![Architecture: REST and MCP clients share one APISIX gateway and identity realm. Each microservice exposes REST and MCP over its own business logic.](docs/images/architecture.svg)
@@ -37,6 +69,7 @@ adds Lua files to APISIX; no separate proxy process is required.
 
 ## Contents
 
+- [Feature support](#feature-support)
 - [Installation](#install)
 - [Petstore example](#example-petstore-microservices)
 - [Configuration reference](#configuration-reference)
