@@ -30,7 +30,7 @@ sampling or elicitation are not compatible with this profile.
 | Resources (`resources/list`, `resources/read`) | Supported | Lists and reads resources with a unique discovered owner; supports configured hiding rules. Resource URIs are not rewritten. |
 | Resource templates (`resources/templates/list`) | Limited | Supports simple scalar `{variable}` expressions with additional bounds. Other RFC 6570 forms are rejected; see the [resource contract](#resource-contract). |
 | Initialization and ping | Supported | Negotiates 2025-11-25 and advertises the supported tools, prompts and resources capabilities. |
-| JSON and SSE transport | Supported | Streamable HTTP POST with JSON or streamed SSE responses. Request/response size and timeout limits apply. |
+| JSON and SSE transport | Supported | Streamable HTTP POST with JSON or streamed SSE responses. Compressed requests and upstream responses are rejected. Request/response size and timeout limits apply. |
 | Catalog change notifications | Not supported | No `listChanged` notifications. Clients must list again to discover changes. |
 | Resource subscriptions and update notifications | Not supported | No `resources/subscribe`, `resources/unsubscribe` or subscription stream. |
 | Tasks / asynchronous jobs | Not supported | Task requests are rejected. A tool declaring tasks as required causes catalog discovery to fail. |
