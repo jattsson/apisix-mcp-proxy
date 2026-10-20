@@ -1,5 +1,24 @@
 # Verification report
 
+## Numeric preservation — 2026-10-20
+
+The local APISIX 3.19.0 run passed **41 integration tests** and **37 OpenResty
+helper assertions**. The new regression checks exact schema bounds at signed
+64-bit limits and around 2^53, and verifies the actual request received by a
+backend using Python's independent integer/Decimal parser. It also exercises
+tool-name aliasing without changing numeric argument values.
+
+Helper checks cover nested arrays, escaped keys, negative zero, duplicate keys,
+changed numeric fields and invalid JSON. A separate deterministic test of 300
+generated nested documents passed independent integer/Decimal comparisons.
+Lua formatting, documented function contracts and lint passed for all 11 Lua files.
+GitHub CI must additionally pass on the exact release commit before publication.
+
+Version 0.1.2 retains source numeric text for unchanged fields in decoded
+containers. This supersedes the rounding behavior documented for 0.1.1 below;
+Lua arithmetic and newly constructed numeric values still use double precision.
+This is fixture verification, not a production rollout or a throughput benchmark.
+
 ## APISIX compatibility study — 2026-10-10
 
 Unmodified v0.1.1 was also exercised on APISIX 3.12.0 and 3.18.0.

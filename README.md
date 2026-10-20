@@ -128,18 +128,18 @@ This is an independently maintained plugin, not an Apache-distributed plugin.
 ### 1. Obtain and install the Lua files
 
 Download the Lua distribution and SHA-256 checksum from
-[GitHub Releases](https://github.com/jattsson/apisix-mcp-proxy/releases/tag/v0.1.1):
+[GitHub Releases](https://github.com/jattsson/apisix-mcp-proxy/releases/tag/v0.1.2):
 
 ```sh
-curl -fLO https://github.com/jattsson/apisix-mcp-proxy/releases/download/v0.1.1/apisix-mcp-proxy-0.1.1.tar.gz
-curl -fLO https://github.com/jattsson/apisix-mcp-proxy/releases/download/v0.1.1/SHA256SUMS
+curl -fLO https://github.com/jattsson/apisix-mcp-proxy/releases/download/v0.1.2/apisix-mcp-proxy-0.1.2.tar.gz
+curl -fLO https://github.com/jattsson/apisix-mcp-proxy/releases/download/v0.1.2/SHA256SUMS
 sha256sum -c SHA256SUMS
-tar -xzf apisix-mcp-proxy-0.1.1.tar.gz
-cd apisix-mcp-proxy-0.1.1
+tar -xzf apisix-mcp-proxy-0.1.2.tar.gz
+cd apisix-mcp-proxy-0.1.2
 ```
 
 Alternatively, clone https://github.com/jattsson/apisix-mcp-proxy and check out
-`v0.1.1`. This release is distributed as a tar archive; it is not published to
+`v0.1.2`. This release is distributed as a tar archive; it is not published to
 LuaRocks. See [release packaging](docs/releases.md) for the archive contents.
 Use the pinned APISIX distribution with its APISIX-Runtime extensions. From the
 repository root, install the Lua source with permission to write to the destination:
@@ -537,11 +537,17 @@ and forwarded without re-encoding; SSE data lines are framed correctly. JSON
 responses are bounded and buffered for validation. A private cjson instance keeps
 `[]`, `{}`, null, false and zero distinct without changing another plugin's codec.
 JSON-RPC IDs may be strings or safe integers (absolute value at most
-9007199254740991); use strings for larger identifiers. Non-finite JSON numbers are
-rejected, and numeric encoding uses 16 significant digits. Requests are decoded
-and re-encoded using LuaJIT doubles: numeric lexemes and arbitrary decimal
-precision are not preserved. Send precision-sensitive identifiers, monetary
-amounts and integers beyond the safe range as strings agreed with the upstream.
+9007199254740991); use strings for larger JSON-RPC IDs. Non-finite JSON numbers
+are rejected. From 0.1.2, unchanged numeric fields in decoded catalogs and request
+arguments retain their original JSON number text when re-encoded. This preserves
+schema bounds such as `9223372036854775807`, integers beyond 2^53, decimals and
+exponents without converting them to strings. Internal Lua values still use
+double precision; this is preservation of wire values, not arbitrary-precision
+arithmetic. Numbers created or changed in Lua use cjson's 16-digit encoding.
+The original text is associated with its decoded container and field; copying a
+number alone to a new container does not carry that text. Plugin aggregation
+retains the decoded schema and argument containers. Values outside cjson's finite
+numeric range remain unsupported.
 
 Compressed requests deliberately return 415 before parsing. Compressed upstream
 responses return a gateway error; `Accept-Encoding: identity` is sent upstream.

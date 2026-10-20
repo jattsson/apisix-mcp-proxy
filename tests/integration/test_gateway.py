@@ -8,6 +8,7 @@ import ssl
 import concurrent.futures
 import subprocess
 import socket
+from decimal import Decimal
 from pathlib import Path
 
 BASE='http://127.0.0.1:19080'
@@ -541,6 +542,27 @@ class GatewayTests(unittest.TestCase):
         status,_,body=request('prompts/get',{'name':'prompt'},path='/mcp/short-ttl',headers=headers)
         self.assertEqual(status,200,body)
         self.assertTrue(any(c['method']=='prompts/list' for c in stats()['calls']))
+
+    def test_41_lossless_catalog_and_argument_numbers(self):
+        headers = {'X-Fixture-Mode': 'numeric-precision'}
+        status, _, body = request(path='/mcp/single', headers=headers)
+        self.assertEqual(status, 200, body)
+        schema = json.loads(body)['result']['tools'][0]['inputSchema']['properties']['expectedVersion']
+        self.assertEqual(schema['maximum'], 9223372036854775807)
+        self.assertEqual(schema['minimum'], -9223372036854775808)
+        self.assertEqual(schema['enum'], [9007199254740991, 9007199254740992, 9007199254740993])
+        raw = (b'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"echo_a",'
+               b'"arguments":{"maximum":9223372036854775807,"beyond":9007199254740993,'
+               b'"decimal":1.234567890123456789,"exponent":1.234567890123456789e-20}}}')
+        status, _, body = request(path='/mcp/single', headers=headers, raw=raw)
+        self.assertEqual(status, 200, body)
+        forwarded = json.loads(stats()['numeric_raw'], parse_float=Decimal)
+        expected = json.loads(raw, parse_float=Decimal)
+        self.assertEqual(forwarded['params']['arguments'], expected['params']['arguments'])
+        self.assertEqual(forwarded['params']['name'], 'echo')
+        result = json.loads(body)['result']['structuredContent']['arguments']
+        self.assertEqual(result['maximum'], 9223372036854775807)
+        self.assertEqual(result['beyond'], 9007199254740993)
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

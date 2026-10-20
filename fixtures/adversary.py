@@ -44,6 +44,8 @@ class Handler(BaseHTTPRequestHandler):
         message = json.loads(raw)
         method = message['method']
         variant = self.headers.get('X-Fixture-Mode', '')
+        if variant == 'numeric-precision':
+            state['numeric_raw'] = raw.decode()
         with lock:
             state['calls'].append({'method': method, 'headers': dict(self.headers), 'body': message})
         if variant == '504':
@@ -90,6 +92,11 @@ class Handler(BaseHTTPRequestHandler):
                         result={'tools':[{'name':'item-'+str(n),'description':'x'*600,'inputSchema':{}}], 'nextCursor':str(n+1)}
                     if variant == 'bad-execution':
                         result['tools'][0]['execution']=42
+                    if variant == 'numeric-precision':
+                        result['tools'][0]['inputSchema']['properties']['expectedVersion'] = {
+                            'type': 'integer', 'minimum': -9223372036854775808,
+                            'maximum': 9223372036854775807,
+                            'enum': [9007199254740991, 9007199254740992, 9007199254740993]}
                     if variant == 'task':
                         result['tools'][0]['execution'] = {'taskSupport': 'required'}
                     if variant == 'bad-catalog':
