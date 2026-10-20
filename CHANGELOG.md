@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 - 2026-10-20
 
+- Preserve original JSON number text in aggregated schemas and forwarded arguments,
+  including integers around 2^53 and signed 64-bit limits, decimals and exponents.
 - Reject missing or repeated upstream Content-Type with controlled cleanup and HTTP 502.
 - Isolate routing snapshots by verified client IP and effective bridge request context.
 

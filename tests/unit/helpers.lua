@@ -97,7 +97,22 @@ check(not sse_feed(sse_new(16), string.rep("data:\n", 17), verify_event))
 local numbers = assert(
     json_decode(
         '{"safe":9007199254740991,"beyond":9007199254740993,'
-            .. '"decimal":1.2345678901234567,"exponent":1.25e-4}'
+            .. '"decimal":1.2345678901234567,"exponent":1.25e-4,'
+            .. '"maximum":9223372036854775807,"minimum":-9223372036854775808}'
     )
 )
+local numeric_source = '{"a":[9007199254740992,9007199254740993,9223372036854775807],'
+    .. '"escaped\\u0031":{"n":-0.0000,"s":"number 9223372036854775807"}}'
+local numeric_copy = assert(json_decode(numeric_source))
+local encoded_copy = assert(json_encode(numeric_copy))
+check(encoded_copy:find("9007199254740993", 1, true))
+check(encoded_copy:find("9223372036854775807", 1, true))
+check(encoded_copy:find("-0.0000", 1, true))
+numeric_copy.a[3] = 42
+check(json_encode(numeric_copy):find("9007199254740993,42", 1, true))
+check(json_encode(json_decode('{"n":9007199254740993,"n":7}')) == '{"n":7}')
+check(json_encode(json_decode('{"n":9007199254740993,"n":"text"}')) == '{"n":"text"}')
+check(json_encode(json_decode('{"o":{"n":9007199254740993},"o":{"n":8}}')) == '{"o":{"n":8}}')
+check(not json_decode('{"n":01}'))
+check(not json_decode('{"n":NaN}'))
 print(json_encode({ checks = checks, roundtrip = sample, numbers = numbers }))

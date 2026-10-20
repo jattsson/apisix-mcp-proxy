@@ -385,7 +385,7 @@ function transport.initialize(conf, ctx, server, deadline)
         params = {
             protocolVersion = conf.protocol_version,
             capabilities = {},
-            clientInfo = { name = "apisix-mcp-proxy", version = "0.1.1" },
+            clientInfo = { name = "apisix-mcp-proxy", version = "0.1.2" },
         },
     }, deadline)
     if not result then
