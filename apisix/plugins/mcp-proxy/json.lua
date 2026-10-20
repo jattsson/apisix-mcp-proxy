@@ -32,7 +32,8 @@ json_decode_invalid_numbers(false)
 json_encode_invalid_numbers(false)
 json_encode_number_precision(16)
 local json = { null = codec.null }
--- Weak keys release numeric source text when its decoded container is collected.
+-- Worker-local numeric source fragments are isolated by decoded container identity.
+-- Weak keys release entries when their containers are garbage-collected.
 local number_sources = setmetatable({}, { __mode = "k" })
 
 
@@ -124,6 +125,7 @@ end
 -- Records original numeric text on containers when cjson would change it.
 -- @param value string JSON document.
 -- @return any Decoded value, or nil and a diagnostic string on invalid JSON.
+--         Table results may record numeric fragments in worker-local weak-key state.
 function json.decode(value)
     local decoded, err = json_decode(value)
     if type(decoded) == "table" then
@@ -137,6 +139,7 @@ end
 -- Restores source numeric text for unchanged fields in decoded containers.
 -- @param value any JSON-compatible value with array metatables where required.
 -- @return string|nil Encoded JSON, or nil and a diagnostic string on failure.
+--         Reads worker-local numeric-source state for unchanged container fields.
 function json.encode(value)
     local encoded, err = json_encode(value)
     if not encoded or type(value) ~= "table" then

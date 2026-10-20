@@ -43,7 +43,10 @@ are explicit APISIX runtime state; they do not modify shared library configurati
 - Preallocate collections when their size is known; accumulate strings in tables
   rather than repeatedly concatenating a growing value inside a hot loop.
 - Keep module state limited to the documented worker-local routing cache and
-  private JSON codec. Request state and cleanup closures belong to the request.
+  private JSON codec. The codec's worker-local weak-key numeric-source sidecar
+  stores numeric source fragments keyed by decoded container identity. Entries
+  are isolated by container identity and released when containers are collected.
+  Request state and cleanup closures belong to the request.
 - Document every function, including local helpers and callbacks, using an LDoc
   summary, typed `@param` entries in signature order and an explicit `@return`.
   Explain side effects, mutation, errors, deadlines and cleanup where applicable.
